@@ -1,0 +1,1 @@
+{"id":"INC-016","summary":"CI pipeline failures","root_cause":"Container registry rate limited","resolution":"Enabled caching and mirrored images","service":"ci","severity":"P3","timestamp":"2026-02-03T07:45:00Z","tags":["ci","registry"]}

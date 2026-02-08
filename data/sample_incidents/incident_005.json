@@ -1,0 +1,1 @@
+{"id":"INC-005","summary":"Orders service crash loop","root_cause":"Unhandled null pointer in config loader","resolution":"Patched config validation","service":"orders-service","severity":"P1","timestamp":"2026-01-18T05:55:00Z","tags":["k8s","crashloop","config"]}

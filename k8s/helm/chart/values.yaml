@@ -1,0 +1,14 @@
+replicaCount: 1
+image:
+  repository: nemotron-ops-commander
+  tag: latest
+service:
+  type: ClusterIP
+  port: 80
+resources:
+  limits:
+    cpu: "2"
+    memory: "4Gi"
+  requests:
+    cpu: "1"
+    memory: "2Gi"

@@ -1,0 +1,1 @@
+{"id":"INC-001","summary":"Payments API returning 502 after deployment","root_cause":"Misconfigured upstream timeout in NGINX","resolution":"Rolled back config and redeployed","service":"payments-api","severity":"P1","timestamp":"2026-01-05T12:03:00Z","tags":["k8s","nginx","timeout"]}

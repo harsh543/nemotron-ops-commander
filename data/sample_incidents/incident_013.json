@@ -1,0 +1,1 @@
+{"id":"INC-013","summary":"Queue backlog growing","root_cause":"Consumer group lag due to CPU throttling","resolution":"Scaled consumers and adjusted limits","service":"events","severity":"P2","timestamp":"2026-02-01T09:58:00Z","tags":["kafka","cpu"]}

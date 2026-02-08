@@ -1,0 +1,1 @@
+{"id":"INC-015","summary":"Kubernetes API latency spike","root_cause":"Etcd compaction lag","resolution":"Ran compaction and defragmentation","service":"cluster","severity":"P2","timestamp":"2026-02-02T16:01:00Z","tags":["etcd","k8s"]}

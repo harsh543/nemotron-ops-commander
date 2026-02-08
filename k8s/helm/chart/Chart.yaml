@@ -1,0 +1,4 @@
+apiVersion: v2
+name: nemotron-ops-commander
+version: 0.1.0
+appVersion: "0.1.0"

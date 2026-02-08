@@ -1,0 +1,1 @@
+{"id":"INC-012","summary":"Service mesh mTLS failures","root_cause":"Expired CA certificate","resolution":"Rotated CA and restarted sidecars","service":"mesh","severity":"P1","timestamp":"2026-01-30T02:44:00Z","tags":["istio","mtls"]}

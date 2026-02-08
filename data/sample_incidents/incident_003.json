@@ -1,0 +1,1 @@
+{"id":"INC-003","summary":"Kubernetes node not ready","root_cause":"Disk pressure due to log growth","resolution":"Cleaned logs and expanded disk","service":"cluster","severity":"P2","timestamp":"2026-01-12T17:11:00Z","tags":["k8s","node","disk"]}

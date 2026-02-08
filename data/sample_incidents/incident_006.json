@@ -1,0 +1,1 @@
+{"id":"INC-006","summary":"High memory usage on recommendation service","root_cause":"Memory leak in feature cache","resolution":"Restarted pods and deployed fix","service":"reco-service","severity":"P2","timestamp":"2026-01-20T14:10:00Z","tags":["memory","leak"]}

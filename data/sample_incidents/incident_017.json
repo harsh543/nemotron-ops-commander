@@ -1,0 +1,1 @@
+{"id":"INC-017","summary":"User profile service returning 500","root_cause":"Schema migration incompatible","resolution":"Rolled back migration and fixed schema","service":"profile","severity":"P1","timestamp":"2026-02-04T18:36:00Z","tags":["db","migration"]}

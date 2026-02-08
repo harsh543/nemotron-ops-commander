@@ -1,0 +1,1 @@
+{"id":"INC-019","summary":"Websocket disconnects","root_cause":"Load balancer idle timeout too low","resolution":"Increased idle timeout","service":"realtime","severity":"P2","timestamp":"2026-02-05T14:12:00Z","tags":["lb","websocket"]}

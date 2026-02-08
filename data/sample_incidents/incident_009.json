@@ -1,0 +1,1 @@
+{"id":"INC-009","summary":"Checkout timeouts","root_cause":"Downstream inventory API latency","resolution":"Applied circuit breaker and cache","service":"checkout","severity":"P1","timestamp":"2026-01-26T11:12:00Z","tags":["timeout","inventory"]}
