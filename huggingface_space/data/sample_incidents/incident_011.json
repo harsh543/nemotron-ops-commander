@@ -1,0 +1,1 @@
+{"id":"INC-011","summary":"Alert storm from node exporter","root_cause":"Misconfigured scrape interval","resolution":"Restored scrape interval and silenced alerts","service":"monitoring","severity":"P3","timestamp":"2026-01-29T13:22:00Z","tags":["prometheus","alerts"]}

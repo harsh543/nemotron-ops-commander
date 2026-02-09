@@ -1,0 +1,1 @@
+{"id":"INC-020","summary":"Billing job missed schedule","root_cause":"Cron controller clock drift","resolution":"Synced NTP and re-ran job","service":"billing","severity":"P3","timestamp":"2026-02-06T20:55:00Z","tags":["cron","ntp"]}

@@ -1,0 +1,1 @@
+{"id":"INC-002","summary":"Login latency spike in auth-service","root_cause":"Database connection pool exhausted","resolution":"Increased pool size and optimized queries","service":"auth-service","severity":"P2","timestamp":"2026-01-09T08:21:00Z","tags":["db","latency","postgres"]}

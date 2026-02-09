@@ -1,0 +1,1 @@
+{"id":"INC-010","summary":"Search index stale","root_cause":"Indexer job failed due to permissions","resolution":"Updated IAM policy and reran job","service":"search","severity":"P3","timestamp":"2026-01-28T06:05:00Z","tags":["search","iam"]}

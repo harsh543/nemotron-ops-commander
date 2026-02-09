@@ -1,0 +1,19 @@
+# Nemotron-Ops-Commander — HuggingFace Space (T4 GPU)
+# Local GPU inference + RAG pipeline
+
+# LLM inference (local GPU)
+torch
+transformers>=4.37.0
+accelerate>=0.26.0
+
+# RAG & embeddings
+chromadb>=0.4.22
+sentence-transformers>=2.3.0
+
+# UI & API
+gradio>=4.15.0
+huggingface-hub>=0.20.0,<1.0
+
+# Data
+pydantic>=2.5.0
+numpy>=1.24.0

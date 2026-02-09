@@ -1,0 +1,152 @@
+[
+  {
+    "id": "INC-001",
+    "title": "H100 HBM3 ECC Degradation — Predictive Failure in 13 Days",
+    "severity": "critical",
+    "symptoms": "Rising ECC single-bit errors (50+ per hour), XID 63 (row remapping) events increasing, sporadic XID 64 (page retirement). Training jobs showing occasional NaN losses.",
+    "root_cause": "HBM3 memory degradation due to manufacturing defect in memory stack. Error rate follows exponential growth curve — once ECC errors exceed 100/hour, GPU typically fails within 10-15 days.",
+    "remediation": "1. Immediately drain GPU from scheduler. 2. Run nvidia-smi -q -d ECC to capture baseline. 3. Monitor row remap count via nvidia-smi -q -d RETIRED_PAGES. 4. Schedule GPU replacement within 7 days. 5. Migrate workloads to spare capacity.",
+    "xid_codes": "63, 64",
+    "predictive_window": "10-15 days from first double-bit error"
+  },
+  {
+    "id": "INC-002",
+    "title": "A100 Thermal Throttling — CRAC Unit Failure",
+    "severity": "warning",
+    "symptoms": "Multiple GPUs in same rack showing temperatures >83°C. Clock speeds reduced to 60% of max. Fan speeds at 100%. Cooling system alerts.",
+    "root_cause": "Computer Room Air Conditioning (CRAC) unit serving the rack failed. Ambient temperature rose from 22°C to 35°C, exceeding GPU thermal envelope.",
+    "remediation": "1. Reduce GPU workload to 50% to lower heat output. 2. Contact facilities team for CRAC repair. 3. If CRAC repair >2 hours, migrate critical workloads to another rack. 4. Verify return to normal temps after CRAC repair.",
+    "xid_codes": "",
+    "predictive_window": "N/A — environmental issue"
+  },
+  {
+    "id": "INC-003",
+    "title": "NVLink Errors During Distributed Training",
+    "severity": "warning",
+    "symptoms": "XID 74 (NVLink error) events on multiple GPUs. Distributed training throughput dropped 40%. NCCL timeout errors in training logs. nvidia-smi nvlink -s shows CRC errors on specific links.",
+    "root_cause": "Degraded NVLink cable between GPU 2 and GPU 5 in the NVSwitch topology. CRC errors indicate physical layer issue — likely cable oxidation or connector seating problem.",
+    "remediation": "1. Identify affected NVLink with nvidia-smi nvlink -s. 2. Check cable seating and connectors. 3. Run nvidia-smi nvlink -r to reset error counters. 4. If errors persist, replace NVLink cable. 5. Verify with NCCL all_reduce bandwidth test.",
+    "xid_codes": "74",
+    "predictive_window": "N/A — physical cable issue"
+  },
+  {
+    "id": "INC-004",
+    "title": "OOM Kills from PyTorch Memory Fragmentation",
+    "severity": "warning",
+    "symptoms": "CUDA out of memory errors despite reported memory availability. XID 31 (GPU memory page fault). nvidia-smi shows 70% memory used but allocations fail. Happens after hours of training.",
+    "root_cause": "PyTorch CUDA memory allocator fragmentation. After many allocation/deallocation cycles, free memory becomes fragmented into small non-contiguous blocks. Large allocations fail despite sufficient total free memory.",
+    "remediation": "1. Add torch.cuda.empty_cache() between training epochs. 2. Set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True. 3. Consider max_split_size_mb setting to reduce fragmentation. 4. For persistent issues, use gradient checkpointing to reduce peak memory.",
+    "xid_codes": "31",
+    "predictive_window": "N/A — software configuration"
+  },
+  {
+    "id": "INC-005",
+    "title": "GPU Fallen Off Bus — XID 79 (PCIe Power Issue)",
+    "severity": "critical",
+    "symptoms": "GPU completely unresponsive. nvidia-smi shows 'GPU has fallen off the bus'. XID 79 in dmesg. No temperature or utilization readings. Other GPUs in node may still be functional.",
+    "root_cause": "PCIe link failure due to power supply brownout. PSU voltage dipped below PCIe spec minimum during load spike, causing GPU to disconnect from PCIe bus. Common with aging PSUs or overloaded power rails.",
+    "remediation": "1. Save dmesg and nvidia-bug-report.sh output. 2. Power cycle the entire node (soft reset won't recover PCIe). 3. After reboot, verify GPU visible with lspci | grep NVIDIA. 4. If persistent, check PSU voltages and GPU power cables. 5. Consider splitting GPU power across different PSU rails.",
+    "xid_codes": "79",
+    "predictive_window": "N/A — sudden failure"
+  },
+  {
+    "id": "INC-006",
+    "title": "CUDA Driver Mismatch After System Update",
+    "severity": "warning",
+    "symptoms": "CUDA applications fail with 'CUDA driver version is insufficient'. nvidia-smi works but shows driver version mismatch. New containers can't access GPU.",
+    "root_cause": "System package update (apt/yum upgrade) installed a new kernel module that conflicts with the NVIDIA driver version. The userspace driver and kernel module are out of sync.",
+    "remediation": "1. Check versions: nvidia-smi (userspace) vs cat /proc/driver/nvidia/version (kernel). 2. If mismatched, reinstall the NVIDIA driver matching your CUDA version. 3. Reboot to load new kernel module. 4. Pin NVIDIA driver packages to prevent auto-updates: apt-mark hold nvidia-*.",
+    "xid_codes": "",
+    "predictive_window": "N/A — software issue"
+  },
+  {
+    "id": "INC-007",
+    "title": "Memory Leak in PyTorch DataLoader Workers",
+    "severity": "warning",
+    "symptoms": "Host RAM usage grows linearly over time. DataLoader worker processes consuming increasing memory. Eventually triggers OOM killer, crashing training job. GPU memory is stable.",
+    "root_cause": "PyTorch DataLoader with num_workers>0 uses copy-on-write fork(). Over time, worker processes accumulate modified pages that can't be shared, leading to linear memory growth proportional to dataset size and worker count.",
+    "remediation": "1. Set persistent_workers=False to restart workers periodically. 2. Reduce num_workers if memory constrained. 3. Use DataLoader(..., prefetch_factor=2) to limit buffering. 4. Monitor with: ps aux | grep dataloader to track per-worker RSS growth.",
+    "xid_codes": "",
+    "predictive_window": "Hours to days depending on dataset size"
+  },
+  {
+    "id": "INC-008",
+    "title": "Power Brownout Causing GPU Resets",
+    "severity": "critical",
+    "symptoms": "Intermittent GPU resets across multiple nodes in same PDU. XID 79 or XID 62 events. Correlated with high-power training jobs starting simultaneously. UPS logs show voltage dips.",
+    "root_cause": "Power Distribution Unit (PDU) overloaded when multiple DGX nodes ramp up simultaneously. Total power draw exceeds PDU capacity, causing voltage sag that triggers GPU protection circuits.",
+    "remediation": "1. Stagger job starts across nodes (add random delay 0-60s). 2. Set GPU power limit: nvidia-smi -pl 300 to reduce peak power. 3. Contact facilities to verify PDU capacity vs actual load. 4. Implement power-aware job scheduling in cluster manager.",
+    "xid_codes": "79, 62",
+    "predictive_window": "Correlates with high-utilization periods"
+  },
+  {
+    "id": "INC-009",
+    "title": "GPU Clock Stuck at Base Frequency",
+    "severity": "warning",
+    "symptoms": "GPU utilization reported high but actual throughput is very low. nvidia-smi shows clock speed stuck at 210 MHz (base) instead of boost frequency. Power draw is unusually low for the workload.",
+    "root_cause": "GPU persistence mode not enabled after driver update, or power governor set to conservative mode. GPU doesn't boost because the driver isn't maintaining application context between kernel launches.",
+    "remediation": "1. Enable persistence mode: nvidia-smi -pm 1. 2. Set application clocks: nvidia-smi -ac 1215,1410 (A100) or nvidia-smi -ac 2619,2100 (H100). 3. Verify: nvidia-smi -q -d CLOCK. 4. Add to startup script to persist across reboots.",
+    "xid_codes": "",
+    "predictive_window": "N/A — configuration issue"
+  },
+  {
+    "id": "INC-010",
+    "title": "InfiniBand Timeout in Multi-Node Training",
+    "severity": "warning",
+    "symptoms": "NCCL errors: 'Connection timed out'. Training hangs at all_reduce operations. ibstat shows port active but ibping to remote node fails intermittently. Affects only specific node pairs.",
+    "root_cause": "InfiniBand switch port flapping due to marginal SFP transceiver. The optical signal is just barely above minimum threshold, causing intermittent link drops under load.",
+    "remediation": "1. Identify affected link: ibdiagnet -ls 10 -r. 2. Check SFP signal levels: mlxlink -d mlx5_0 -m. 3. If signal marginal (<-10 dBm), replace SFP transceiver. 4. Clean fiber connectors with IPA wipes. 5. Verify with ib_write_bw test between affected nodes.",
+    "xid_codes": "",
+    "predictive_window": "N/A — hardware/cabling issue"
+  },
+  {
+    "id": "INC-011",
+    "title": "CUDA Illegal Memory Access in Custom Kernels",
+    "severity": "critical",
+    "symptoms": "XID 13 (illegal memory access) causing GPU reset. Specific training job crashes reproducibly at certain batch sizes. CUDA-MEMCHECK shows out-of-bounds access. Other jobs on same GPU work fine.",
+    "root_cause": "Custom CUDA kernel in user's model has buffer overflow when batch dimension exceeds expected size. The kernel doesn't validate input dimensions before indexing shared memory.",
+    "remediation": "1. Run with CUDA_LAUNCH_BLOCKING=1 to get exact error location. 2. Use compute-sanitizer --tool memcheck to identify the offending kernel. 3. Add bounds checking to custom CUDA kernels. 4. Reduce batch size as temporary workaround.",
+    "xid_codes": "13",
+    "predictive_window": "N/A — reproducible software bug"
+  },
+  {
+    "id": "INC-012",
+    "title": "Fan Failure Causing Thermal Shutdown",
+    "severity": "critical",
+    "symptoms": "GPU temperature rapidly climbing despite low utilization. Fan RPM reads 0 on affected GPU. XID 62 (thermal protection shutdown). Node loses GPU after thermal limit exceeded (92°C).",
+    "root_cause": "GPU fan motor failure. In passively-cooled data center designs (DGX), this indicates chassis fan failure or blocked airflow path. Temperature rises rapidly without forced air cooling.",
+    "remediation": "1. Immediately power down affected node to prevent thermal damage. 2. Check chassis fans and airflow path for obstructions. 3. If GPU-mounted fan, RMA the GPU. 4. If chassis fan, replace fan module. 5. Verify temperatures stable under load after repair.",
+    "xid_codes": "62",
+    "predictive_window": "Minutes from fan failure to shutdown"
+  },
+  {
+    "id": "INC-013",
+    "title": "HBM Degradation Pattern — Predictive Failure (13-Day Window)",
+    "severity": "critical",
+    "symptoms": "ECC single-bit error rate increasing exponentially: Day 1: 10/hr, Day 3: 50/hr, Day 7: 200/hr. Row remapping events (XID 63) accelerating. No double-bit errors yet but trajectory predicts failure.",
+    "root_cause": "Gradual HBM degradation following a known wear-out pattern. SRAM cells in HBM stack are failing progressively. Based on production telemetry from 10,000+ GPUs, this error trajectory leads to uncorrectable errors within 13 days (±3 days).",
+    "remediation": "1. Tag GPU as 'degrading' in fleet management system. 2. Deprioritize for new job placement (allow current jobs to finish). 3. Order replacement GPU (lead time: 3-5 days). 4. Schedule maintenance window for swap. 5. Archive ECC telemetry for NVIDIA RMA claim.",
+    "xid_codes": "63",
+    "predictive_window": "13 days (±3 days) from first exponential increase"
+  },
+  {
+    "id": "INC-014",
+    "title": "NVSwitch Error in DGX System",
+    "severity": "critical",
+    "symptoms": "Multiple GPUs showing NVLink errors simultaneously. nvidia-smi shows reduced NVLink bandwidth across all GPUs. Training throughput collapsed by 60-70%. dmesg shows NVSwitch fault.",
+    "root_cause": "NVSwitch ASIC failure affecting the high-speed interconnect fabric. A single NVSwitch failure degrades all GPU-to-GPU communication paths that route through it.",
+    "remediation": "1. Identify failed NVSwitch: nvidia-smi nvswitch -s. 2. Node must be taken offline — NVSwitch is not field-replaceable on most DGX configs. 3. Open NVIDIA support case for NVSwitch RMA. 4. Migrate all workloads to other nodes. 5. This is a multi-day repair.",
+    "xid_codes": "74",
+    "predictive_window": "N/A — sudden hardware failure"
+  },
+  {
+    "id": "INC-015",
+    "title": "Row Remapping Exhaustion — GPU Replacement Required",
+    "severity": "critical",
+    "symptoms": "nvidia-smi -q -d RETIRED_PAGES shows retired pages at maximum (64 pages). New ECC errors cannot be remapped. XID 94 (contained ECC error) escalating to XID 95 (uncontained). Risk of silent data corruption.",
+    "root_cause": "HBM3 has exhausted its row remapping capacity. The GPU has retired the maximum number of bad memory rows and can no longer mask new failures. Any additional ECC errors will be uncontained, risking data corruption in computation results.",
+    "remediation": "1. IMMEDIATELY remove GPU from production — silent data corruption risk. 2. Run nvidia-smi -q -d RETIRED_PAGES to confirm exhaustion. 3. DO NOT run compute workloads on this GPU. 4. File NVIDIA RMA with ECC telemetry history. 5. Replace GPU.",
+    "xid_codes": "94, 95",
+    "predictive_window": "N/A — must replace immediately"
+  }
+]

@@ -1,0 +1,103 @@
+# NemOps Agent Configuration
+agent:
+  name: "NemOps GPU Infrastructure Agent"
+  description: >
+    AI-powered GPU infrastructure monitoring agent that analyzes GPU health,
+    searches historical incidents, runs diagnostics, and generates remediation plans.
+  max_steps: 10
+  reasoning_mode: true  # Enable Nemotron's thinking traces
+
+llm:
+  model: "${NEMOTRON_MODEL:-nemotron-3-nano:30b-cloud}"
+  base_url: "${OLLAMA_HOST:-http://localhost:11434}/v1"
+  temperature: 0.7
+  max_tokens: 4096
+
+tools:
+  - name: gpu_health_check
+    description: >
+      Check current GPU health metrics including temperature, utilization,
+      memory usage, ECC errors, power draw, and clock speeds.
+      Returns structured health data for one or all GPUs.
+    parameters:
+      gpu_id:
+        type: integer
+        description: "GPU index (0-based). Omit to check all GPUs."
+        required: false
+
+  - name: search_incidents
+    description: >
+      Search historical GPU incident database using semantic similarity.
+      Returns matching past incidents with root causes and remediations.
+      Use this when you see symptoms that might match known failure patterns.
+    parameters:
+      query:
+        type: string
+        description: "Description of the GPU issue or symptoms to search for"
+        required: true
+      top_k:
+        type: integer
+        description: "Number of results to return (default: 3)"
+        required: false
+
+  - name: run_diagnostic
+    description: >
+      Run a targeted GPU diagnostic test. Available tests: memory_stress,
+      compute_stress, nvlink_check, pcie_bandwidth, thermal_profile.
+    parameters:
+      test_name:
+        type: string
+        description: "Diagnostic test to run"
+        required: true
+        enum: ["memory_stress", "compute_stress", "nvlink_check", "pcie_bandwidth", "thermal_profile"]
+      gpu_id:
+        type: integer
+        description: "GPU to test (default: 0)"
+        required: false
+
+  - name: generate_alert
+    description: >
+      Generate a structured alert with severity, root cause analysis,
+      and step-by-step remediation plan based on the diagnosis.
+    parameters:
+      severity:
+        type: string
+        description: "Alert severity level"
+        required: true
+        enum: ["critical", "warning", "info"]
+      title:
+        type: string
+        description: "Short alert title"
+        required: true
+      analysis:
+        type: string
+        description: "Root cause analysis from your investigation"
+        required: true
+      remediation_steps:
+        type: array
+        items:
+          type: string
+        description: "Ordered list of remediation steps"
+        required: true
+
+system_prompt: |
+  You are NemOps, an expert GPU infrastructure monitoring agent built by an engineer
+  who maintained 99.99% uptime across 10,000+ GPUs processing 10M+ events daily.
+
+  Your job is to analyze GPU health, diagnose issues, and recommend remediations.
+
+  WORKFLOW:
+  1. Check GPU health metrics using gpu_health_check
+  2. If anomalies detected, search_incidents for matching historical patterns
+  3. If needed, run_diagnostic for deeper investigation
+  4. Generate a structured alert with generate_alert
+
+  You have deep expertise in:
+  - NVIDIA GPU failure modes (XID errors, ECC errors, thermal throttling)
+  - HBM3 degradation patterns and predictive failure detection
+  - NVLink/NVSwitch topology issues in multi-GPU systems
+  - CUDA driver compatibility and memory management
+  - PCIe power delivery and thermal management
+
+  Always explain your reasoning. When you see a pattern, cite the specific
+  failure mode and explain why you believe it matches.

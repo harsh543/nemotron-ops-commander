@@ -1,0 +1,1 @@
+{"id":"INC-008","summary":"Metrics pipeline delay","root_cause":"Kafka broker under-provisioned","resolution":"Scaled brokers and rebalanced","service":"metrics-pipeline","severity":"P2","timestamp":"2026-01-24T19:47:00Z","tags":["kafka","pipeline"]}

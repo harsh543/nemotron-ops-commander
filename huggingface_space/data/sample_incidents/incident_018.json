@@ -1,0 +1,1 @@
+{"id":"INC-018","summary":"DNS resolution errors","root_cause":"CoreDNS crash due to config error","resolution":"Fixed config and restarted","service":"dns","severity":"P1","timestamp":"2026-02-05T03:27:00Z","tags":["dns","coredns"]}

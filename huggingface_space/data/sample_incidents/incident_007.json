@@ -1,0 +1,1 @@
+{"id":"INC-007","summary":"API gateway returning 401","root_cause":"Expired JWT signing key","resolution":"Rotated signing keys and redeployed","service":"api-gateway","severity":"P1","timestamp":"2026-01-22T09:30:00Z","tags":["auth","jwt"]}

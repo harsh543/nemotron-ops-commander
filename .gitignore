@@ -50,3 +50,17 @@ logs/
 
 # ChromaDB
 chroma_storage/
+
+# Internal docs (not for public repo)
+GTC_GOLDEN_TICKET_SUBMISSION.md
+DEPLOY_TO_HUGGINGFACE.md
+nemops-copilot-prompt-mac16gb.md
+DEMO_GUIDE.md
+deploy_hf_space.sh
+colab_hf_token_setup.ipynb
+
+# Nested venvs and envs
+nemops_local_ollama/.venv/
+nemops_local_ollama/.env
+nemops_local_ollama/nemops-copilot-prompt-mac16gb.md
+nemops_local_ollama/setup.sh
