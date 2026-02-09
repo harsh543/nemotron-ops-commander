@@ -13,50 +13,111 @@ short_description: AI-Powered Incident Response for SRE Teams
 
 # Nemotron-Ops-Commander
 
-**AI-Powered Incident Response System** using NVIDIA Nemotron with RAG over 30 real-world incidents.
+**AI-Powered Incident Response System** for SRE teams — powered by NVIDIA Nemotron with RAG over 30 real-world production incidents.
+
+When a production service goes down, this system automates the first critical minutes: analyzing logs, classifying severity, identifying root causes, and surfacing similar historical incidents with proven resolutions.
+
+> **[GitHub Repository](https://github.com/harshpbajaj/nemotron-ops-commander)** for full source code, architecture docs, and local deployment instructions.
+
+---
 
 ## What This Demo Does
 
-| Tab | Description |
-|-----|-------------|
-| **Log Analysis** | Paste K8s/application logs for AI root-cause analysis |
-| **Incident Triage** | Describe an incident for severity classification (P0-P4) |
-| **Performance Optimizer** | Input system metrics for optimization recommendations |
-| **Knowledge Search (RAG)** | Semantic search over 30 real-world SRE incidents |
+| Tab | Agent | What You Get |
+|-----|-------|-------------|
+| **Log Analysis** | Log Analyzer | Paste K8s/application logs and get structured findings — severity, cited evidence from log lines, confidence scores, root cause hypothesis, and actionable recommendations |
+| **Incident Triage** | Incident Triager | Describe an incident and get P0-P4 severity classification, impact assessment, affected service identification, and prioritized next steps |
+| **Performance Optimizer** | Performance Optimizer | Input CPU/memory/GPU metrics and get bottleneck identification with targeted optimization actions, rationale, and risk levels |
+| **Knowledge Search** | RAG Engine | Semantic search over 30 curated real-world SRE incidents from Kubernetes, AWS, Azure, StackOverflow, and GitHub — returns similar incidents with resolutions in <50ms |
+
+---
 
 ## How It Works
 
-- **LLM Inference**: HuggingFace Inference API (serverless, CPU-safe)
-- **RAG Pipeline**: ChromaDB (embedded) + sentence-transformers embeddings
-- **Knowledge Base**: 30 real-world incidents from K8s, AWS, Azure, StackOverflow, GitHub
-- **Multi-Agent Architecture**: 4 specialized SRE agents (Log Analyzer, Incident Triager, Remediation Suggester, Performance Optimizer)
+### Inference
+
+- **On GPU Spaces (T4/A10)**: Loads the model directly onto the GPU using `transformers` with `torch.float16` and `device_map="auto"` for fast local inference (~200-500ms per query)
+- **On CPU Spaces**: Falls back to the HuggingFace Inference API (serverless)
+- **Model priority**: Nemotron-Mini-4B-Instruct (primary), Phi-3-mini-4k-instruct (fallback)
+
+### RAG Pipeline
+
+- **ChromaDB** (embedded, runs in `/tmp`) indexes 30 real-world incidents at startup
+- **sentence-transformers** (`all-MiniLM-L6-v2`) generates embeddings for semantic search
+- Incidents cover: OOMKilled pods, CrashLoopBackOff, Node NotReady, database connection storms, TLS expiry, DNS failures, EKS scaling, AKS upgrades, memory leaks, GC pauses, failed deployments, and more
+
+### Multi-Agent Architecture
+
+Four specialized SRE agents, each with domain-specific system prompts and structured JSON output schemas:
+
+```
+User Query --> Gradio UI --> Agent (prompt + system prompt) --> LLM --> JSON Parser --> Formatted Output
+                                                            --> ChromaDB RAG (knowledge search)
+```
+
+---
 
 ## Try It
 
 1. Click any tab
-2. Use the pre-filled sample data or enter your own
+2. Use the pre-filled sample data or enter your own scenarios
 3. Click the action button
-4. See AI-powered analysis results
+4. See AI-powered analysis with structured results
 
-> **Note**: This runs on CPU-only free tier. First request may take 10-30s as models warm up.
-
-## Architecture
-
-```
-User Query -> Gradio UI -> Agent (prompt builder) -> HF Inference API -> JSON Parser -> Formatted Output
-                                                  -> ChromaDB RAG (for knowledge search)
-```
-
-## Configuration
-
-Set these as **Space Secrets** for better performance:
-
-| Secret | Description |
-|--------|-------------|
-| `HF_TOKEN` | HuggingFace token (for higher Inference API rate limits) |
-| `MODEL_ID` | Override default model (e.g., `nvidia/Nemotron-Mini-4B-Instruct`) |
+**Recommended demo order** (start with the fastest tab):
+1. **Knowledge Search** — instant semantic search results
+2. **Log Analysis** — click "Analyze Logs" with the pre-filled OOMKill scenario
+3. **Incident Triage** — click "Triage Incident" for priority classification
+4. **Performance Optimizer** — adjust metric sliders, click "Analyze & Optimize"
 
 ---
 
-*Built for the NVIDIA GTC Golden Ticket Contest*
+## Knowledge Base — 30 Real-World Incidents
+
+| Source | Count | Topics |
+|--------|-------|--------|
+| Kubernetes | 8 | OOMKilled, CrashLoopBackOff, Node NotReady, DNS, PVC |
+| Database | 4 | Connection storms, deadlocks, replication lag |
+| Networking | 3 | TLS cert expiry, DNS resolution, LB timeouts |
+| AWS | 4 | EKS scaling, S3 throttling, EC2 limits, IAM |
+| Azure | 3 | AKS upgrades, App Gateway 502, VM scaling |
+| Application | 4 | Memory leaks, thread pools, GC pauses, async errors |
+| CI/CD | 4 | Failed deploys, Helm issues, image pull, rollbacks |
+
+---
+
+## Configuration
+
+Set these as **Space Secrets** for optimal performance:
+
+| Secret | Description |
+|--------|-------------|
+| `HF_TOKEN` | HuggingFace token — required for gated models (Nemotron) and higher Inference API rate limits |
+| `MODEL_ID` | Override default model (default: `nvidia/Nemotron-Mini-4B-Instruct`) |
+
+### Hardware Recommendation
+
+- **T4 Small** (16GB VRAM) — recommended for local GPU inference, Nemotron-Mini-4B fits in ~8GB fp16
+- **CPU Basic** — works via HF Inference API fallback, but slower (10-30s per query)
+
+---
+
+## Full Project
+
+This Space is a deployment of [Nemotron-Ops-Commander](https://github.com/harshpbajaj/nemotron-ops-commander), which includes:
+
+- **FastAPI backend** with authentication, rate limiting, and REST APIs
+- **LangGraph orchestration** for multi-agent pipelines
+- **SGLang optimization** for 2.5x inference speedup
+- **OpenTelemetry + Prometheus** observability stack
+- **Docker + Kubernetes** deployment manifests
+- **Knowledge connectors** for StackOverflow, K8s Docs, AWS/Azure Docs, GitHub Issues
+- **NemOps Local** — GPU infrastructure monitor using Nemotron 3 Nano + Ollama
+
+---
+
+*Built for the NVIDIA GTC 2026 Golden Ticket Developer Contest | #NVIDIAGTC*
+
 *Powered by [NVIDIA Nemotron](https://huggingface.co/nvidia/Nemotron-Mini-4B-Instruct) | ChromaDB RAG | sentence-transformers*
+
+*Author: [Harsh Bajaj](https://github.com/harshpbajaj)*
