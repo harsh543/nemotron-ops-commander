@@ -37,6 +37,11 @@ The **Knowledge Search** uses RAG over 30 curated real-world incidents to surfac
 
 ## Architecture
 
+![AI-Powered Incident Response Architecture](AI-powered%20incident%20response%20architecture.png)
+
+<details>
+<summary>📐 View Mermaid Diagram</summary>
+
 ```mermaid
 graph TB
     subgraph "Client Layer"
@@ -106,6 +111,8 @@ graph TB
     GH --> CHROMA
 ```
 
+</details>
+
 ### How Agents Orchestrate
 
 ```
@@ -150,6 +157,8 @@ python benchmarks/throughput_test.py --duration 60
 ---
 
 ## RAG Knowledge Base — 30 Real-World Incidents
+
+![RAG Pipeline — NVIDIA Nemotron](RAGPipelineNvidaNemotron.png)
 
 Not synthetic data — curated from real Kubernetes failures, AWS outages, database storms, and StackOverflow threads:
 
