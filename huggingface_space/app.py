@@ -34,6 +34,29 @@ SAMPLE_INCIDENT_DESC = """Payment API pods are being OOMKilled after deployment 
 5 restarts in 2 minutes. Customer error rate spiked to 15%.
 Heap usage was at 94% before kill. GC pauses exceeding 2 seconds."""
 
+# ── Additional sample scenarios for demo / judging ──────────────────────
+
+SAMPLE_LOGS_DNS = """\
+[2026-02-07T12:05:11Z] app: ERROR: Temporary failure in name resolution: api.stripe.com
+[2026-02-07T12:05:12Z] app: ERROR: Temporary failure in name resolution: api.stripe.com
+[2026-02-07T12:05:15Z] coredns: plugin/errors: 2 api.stripe.com. A: read udp 10.0.1.2:38122->10.0.0.10:53: i/o timeout
+[2026-02-07T12:05:20Z] kubelet: OOMKilled: Container coredns in pod coredns-6f8d
+[2026-02-07T12:05:25Z] coredns: [FATAL] plugin/forward: too many open files"""
+
+SAMPLE_LOGS_AUTH = """\
+[2026-02-07T09:10:03Z] api-gateway: WARN: JWT signature verification failed
+[2026-02-07T09:10:04Z] api-gateway: ERROR: 401 Unauthorized for /v1/orders
+[2026-02-07T09:10:05Z] auth-service: INFO: JWKS cache refresh succeeded
+[2026-02-07T09:10:06Z] api-gateway: WARN: kid=old-key-2023 not found in JWKS
+[2026-02-07T09:10:07Z] api-gateway: ERROR: 401 Unauthorized for /v1/payments"""
+
+SAMPLE_LOGS_GPU = """\
+[2026-02-07T08:15:00Z] kubelet: Container ml-trainer failed to start: OCI runtime create failed
+[2026-02-07T08:15:01Z] nvidia-device-plugin: Failed to initialize NVML: could not load NVML library
+[2026-02-07T08:15:02Z] ml-trainer: CUDA initialization error: CUDA driver version is insufficient for CUDA runtime version
+[2026-02-07T08:15:03Z] kubelet: Back-off restarting failed container ml-trainer in pod training-job-8x4a2
+[2026-02-07T08:14:50Z] kured: Reboot required detected on node gpu-worker-03 (kernel 5.15.0-94)"""
+
 
 # ---------------------------------------------------------------------------
 # Formatting helpers
@@ -235,6 +258,16 @@ def build_ui() -> gr.Blocks:
                     outputs=[analysis_output, analysis_raw],
                 )
 
+                gr.Examples(
+                    examples=[
+                        [SAMPLE_LOGS_DNS, "coredns", "production"],
+                        [SAMPLE_LOGS_AUTH, "api-gateway", "production"],
+                        [SAMPLE_LOGS_GPU, "ml-trainer", "production"],
+                    ],
+                    inputs=[log_input, system_input, env_input],
+                    label="More sample scenarios (click to load)",
+                )
+
             # ── Tab 2: Incident Triage ───────────────────────────
             with gr.TabItem("Incident Triage"):
                 gr.Markdown("Describe an incident for AI-powered severity classification and action plan.")
@@ -268,6 +301,43 @@ def build_ui() -> gr.Blocks:
                     outputs=[triage_output, triage_raw],
                 )
 
+                gr.Examples(
+                    examples=[
+                        [
+                            "DNS resolution failures across cluster",
+                            "Multiple services report 'Temporary failure in name resolution.' "
+                            "CoreDNS pods are OOMKilled and restart every 3\u20135 minutes. "
+                            "External API calls (Stripe, Slack) fail intermittently (~20%). "
+                            "Recent change: increased ndots setting to 5 in base image. "
+                            "Incident started after a config rollout to all namespaces.",
+                            0.20,
+                            6000,
+                        ],
+                        [
+                            "GPU training jobs failing with CUDA errors",
+                            "All pods requesting nvidia.com/gpu fail with CUDA init errors. "
+                            "nvidia-smi fails with 'couldn't communicate with driver.' "
+                            "Kernel auto-updated last night; nodes rebooted by kured. "
+                            "8 A100 nodes affected; training pipeline down for 2 hours.",
+                            0.05,
+                            12000,
+                        ],
+                        [
+                            "Helm upgrade fails with another operation in progress",
+                            "Helm upgrade --install for api-gateway chart failed with "
+                            "'another operation (install/upgrade/rollback) is in progress'. "
+                            "No other Helm operations running. Last release revision shows "
+                            "'pending-upgrade' from a failed deploy 3 days ago. ArgoCD retried "
+                            "5 times with same error. Manual helm rollback also fails. "
+                            "API gateway running on old revision, cannot deploy critical security patches.",
+                            0.02,
+                            4500,
+                        ],
+                    ],
+                    inputs=[title_input, desc_input, error_rate, latency_input],
+                    label="More sample incidents (click to load)",
+                )
+
             # ── Tab 3: Performance Optimizer ─────────────────────
             with gr.TabItem("Performance Optimizer"):
                 gr.Markdown("Input system metrics for AI-powered optimization recommendations.")
@@ -291,6 +361,29 @@ def build_ui() -> gr.Blocks:
                     fn=handle_optimize,
                     inputs=[cpu_slider, mem_slider, gpu_slider, svc_input, ctx_input],
                     outputs=[opt_output, opt_raw],
+                )
+
+                gr.Examples(
+                    examples=[
+                        [
+                            92, 88, 35, "ml-inference",
+                            "Production inference service on K8s with A10 GPUs; batch size 16; "
+                            "latency SLO 120ms; p99 currently 350ms; autoscaling limited to 4 replicas.",
+                        ],
+                        [
+                            65, 97, 10, "order-processing",
+                            "Java service with 2Gi memory limit and -Xmx1536m. "
+                            "Seeing OOMKills during peak traffic; thread pool size 200; "
+                            "Netty direct buffers enabled.",
+                        ],
+                        [
+                            40, 55, 85, "training-orchestrator",
+                            "Distributed training jobs; GPU utilization high but throughput flat. "
+                            "Network RX/TX spikes; NCCL timeouts; running on mixed instance types.",
+                        ],
+                    ],
+                    inputs=[cpu_slider, mem_slider, gpu_slider, svc_input, ctx_input],
+                    label="More sample scenarios (click to load)",
                 )
 
             # ── Tab 4: Knowledge Search (RAG) ────────────────────
@@ -318,6 +411,18 @@ def build_ui() -> gr.Blocks:
                     fn=handle_rag,
                     inputs=[rag_query, rag_topk],
                     outputs=[rag_output, rag_raw],
+                )
+
+                gr.Examples(
+                    examples=[
+                        ["CoreDNS OOM ndots 5 dns failures", 5],
+                        ["EKS autoscaler max size reached pending pods", 5],
+                        ["CUDA driver version insufficient after kernel update", 5],
+                        ["Helm pending-upgrade another operation in progress", 5],
+                        ["AKS nodepool upgrade failed poddisruptionbudget", 5],
+                    ],
+                    inputs=[rag_query, rag_topk],
+                    label="Sample queries (click to load)",
                 )
 
         gr.Markdown(
