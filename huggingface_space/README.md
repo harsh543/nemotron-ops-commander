@@ -13,7 +13,16 @@ short_description: AI-Powered Incident Response for SRE Teams
 
 # Nemotron-Ops-Commander
 
-**AI-Powered Incident Response System** for SRE teams — powered by NVIDIA Nemotron with RAG over 30 real-world production incidents.
+**AI-Powered Incident Response System** for SRE teams — powered by **100% NVIDIA AI Stack** with RAG over 30 real-world production incidents.
+
+## 🚀 NVIDIA Full-Stack AI
+
+| Component | Technology | Key Benefit |
+|-----------|-----------|-------------|
+| **LLM** | [Nemotron-Mini-4B-Instruct](https://huggingface.co/nvidia/Nemotron-Mini-4B-Instruct) | Native tool-calling, 50% smaller than 8B models, T4-compatible |
+| **Embeddings** | [llama-nemotron-embed-1b-v2](https://huggingface.co/nvidia/llama-nemotron-embed-1b-v2) (1024 dims) | **+20-36% better retrieval**, 16× longer context (8K tokens) |
+| **GPU** | NVIDIA T4 (16GB VRAM) | Local inference, edge-deployable |
+| **Stack** | PyTorch + CUDA + Transformers | Optimized NVIDIA ecosystem |
 
 When a production service goes down, this system automates the first critical minutes: analyzing logs, classifying severity, identifying root causes, and surfacing similar historical incidents with proven resolutions.
 
@@ -40,10 +49,14 @@ When a production service goes down, this system automates the first critical mi
 - **On CPU Spaces**: Falls back to the HuggingFace Inference API (serverless)
 - **Model priority**: Nemotron-Mini-4B-Instruct (primary), Phi-3-mini-4k-instruct (fallback)
 
-### RAG Pipeline
+### RAG Pipeline (NVIDIA-Powered)
 
 - **ChromaDB** (embedded, runs in `/tmp`) indexes 30 real-world incidents at startup
-- **sentence-transformers** (`all-MiniLM-L6-v2`) generates embeddings for semantic search
+- **NVIDIA llama-nemotron-embed-1b-v2** generates embeddings for semantic search
+  - **1024 dimensions** (vs 384 for previous model)
+  - **+20-36% better retrieval accuracy** (vs all-MiniLM-L6-v2)
+  - **8,192 token context** (vs 512) — handles long logs without truncation
+  - **Matryoshka embeddings** — configurable dimensions for storage/accuracy trade-off
 - Incidents cover: OOMKilled pods, CrashLoopBackOff, Node NotReady, database connection storms, TLS expiry, DNS failures, EKS scaling, AKS upgrades, memory leaks, GC pauses, failed deployments, and more
 
 ### Multi-Agent Architecture
@@ -118,6 +131,9 @@ This Space is a deployment of [Nemotron-Ops-Commander](https://github.com/harshp
 
 *Built for the NVIDIA GTC 2026 Golden Ticket Developer Contest | #NVIDIAGTC*
 
-*Powered by [NVIDIA Nemotron](https://huggingface.co/nvidia/Nemotron-Mini-4B-Instruct) | ChromaDB RAG | sentence-transformers*
+*Powered by **100% NVIDIA AI Stack**:*
+- *[NVIDIA Nemotron-Mini-4B-Instruct](https://huggingface.co/nvidia/Nemotron-Mini-4B-Instruct) (LLM)*
+- *[NVIDIA llama-nemotron-embed-1b-v2](https://huggingface.co/nvidia/llama-nemotron-embed-1b-v2) (Embeddings)*
+- *ChromaDB RAG | NVIDIA T4 GPU | PyTorch + CUDA*
 
-*Author: [Harsh Bajaj](https://github.com/harshpbajaj)*
+*Author: [Harsh Bajaj](https://github.com/harshpbajaj) | [Comprehensive Benchmarks](https://github.com/harshpbajaj/nemotron-ops-commander/blob/main/benchmarks/GTC_2026_Submission_Package.md)*

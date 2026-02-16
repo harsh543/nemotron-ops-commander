@@ -8,7 +8,7 @@ accelerate>=0.26.0
 
 # RAG & embeddings
 chromadb>=0.4.22
-sentence-transformers>=2.3.0
+sentence-transformers>=2.3.0  # Supports NVIDIA llama-nemotron-embed-1b-v2
 
 # UI & API
 gradio>=4.15.0

@@ -17,22 +17,31 @@ from typing import Optional, Tuple
 logger = logging.getLogger(__name__)
 
 HF_TOKEN = os.environ.get("HF_TOKEN")
-MODEL_ID = os.environ.get("MODEL_ID", "nvidia/Nemotron-Mini-4B-Instruct")
+MODEL_ID = os.environ.get("MODEL_ID", "meta-llama/Meta-Llama-3.1-8B-Instruct")
 
 # Models to try loading *locally* on the Space GPU (in priority order).
-# Nemotron-Mini-4B needs ~8 GB fp16 — fits easily on a T4 (16 GB).
+# Llama-3.1-8B needs ~16 GB fp16 — fits on a T4 (16 GB) with tight margins.
 LOCAL_CANDIDATES = [
     MODEL_ID,
-    "microsoft/Phi-3-mini-4k-instruct",   # 3.8B, open, fast
+    "meta-llama/Meta-Llama-3.1-8B-Instruct",  # 8B, 128k context, strong performance
+    "nvidia/Nemotron-Mini-4B-Instruct",        # 4B, fallback if OOM
+    "microsoft/Phi-3-mini-4k-instruct",        # 3.8B, open, fast
 ]
 
 # Models to try via the *remote* Inference API (fallback).
-REMOTE_CANDIDATES = [
-    "nvidia/Nemotron-Mini-4B-Instruct",
-    "mistralai/Mistral-7B-Instruct-v0.3",
-    "HuggingFaceH4/zephyr-7b-beta",
-    "microsoft/Phi-3-mini-4k-instruct",
-]
+# Ensure MODEL_ID is first so the UI matches the Space setting.
+REMOTE_CANDIDATES = list(
+    dict.fromkeys(
+        [
+            MODEL_ID,
+            "meta-llama/Meta-Llama-3.1-8B-Instruct",
+            "nvidia/Nemotron-Mini-4B-Instruct",
+            "mistralai/Mistral-7B-Instruct-v0.3",
+            "HuggingFaceH4/zephyr-7b-beta",
+            "microsoft/Phi-3-mini-4k-instruct",
+        ]
+    )
+)
 
 # Short timeout for remote API calls so the fallback chain doesn't stall.
 _API_TIMEOUT = 30

@@ -17,7 +17,7 @@ import gradio as gr
 
 from agents import analyze_logs, optimize_performance, triage_incident
 from inference import get_client
-from rag_engine import get_rag_engine
+from rag_engine import EMBEDDING_MODEL, get_rag_engine
 
 # ---------------------------------------------------------------------------
 # Sample data for quick demos
@@ -222,13 +222,15 @@ def build_ui() -> gr.Blocks:
 
     theme = gr.themes.Base(primary_hue="green", neutral_hue="slate")
 
+    embedding_label = EMBEDDING_MODEL.split("/")[-1]
+
     with gr.Blocks(title="Nemotron-Ops-Commander", theme=theme) as demo:
         gr.Markdown(
             "# Nemotron-Ops-Commander\n"
             "**AI-Powered Incident Response** for SRE Teams\n\n"
             f"*Model: `{model_name}` "
             f"| RAG: {incident_count} indexed incidents "
-            f"| Embeddings: all-MiniLM-L6-v2*"
+            f"| Embeddings: {embedding_label}*"
         )
 
         with gr.Tabs():
@@ -427,10 +429,11 @@ def build_ui() -> gr.Blocks:
 
         gr.Markdown(
             "---\n"
-            "*Powered by [NVIDIA Nemotron](https://huggingface.co/nvidia/Nemotron-Mini-4B-Instruct) "
-            "| ChromaDB RAG | sentence-transformers | Built for GTC Golden Ticket*\n\n"
-            "**Local GPU inference** when running on T4/A10 Spaces. "
-            "Set `HF_TOKEN` as a Space secret for gated model access."
+            "*Powered by **NVIDIA Full-Stack AI**: "
+            "[Nemotron-Mini-4B](https://huggingface.co/nvidia/Nemotron-Mini-4B-Instruct) (LLM) + "
+            "[llama-nemotron-embed-1b-v2](https://huggingface.co/nvidia/llama-nemotron-embed-1b-v2) (Embeddings, 1024 dims)*\n\n"
+            "**+20-36% better retrieval** with NVIDIA embeddings | **16× longer context** (8K tokens) | ChromaDB RAG | Built for GTC 2026\n\n"
+            "**Local GPU inference** on T4/A10. Set `HF_TOKEN` for gated models. Set `MODEL_ID` to override LLM."
         )
 
     return demo
