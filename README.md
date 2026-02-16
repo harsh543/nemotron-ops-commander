@@ -146,7 +146,7 @@ python api/server.py
 
 ![AI-Powered Incident Response Architecture](AI-powered%20incident%20response%20architecture.png)
 
-![Nemotron Ops Commander Architecture (Local 16GB)](assets/architecture/nemotron-ops-commander-architecture.jpg)
+![Nemotron Ops Commander Architecture (Local 16GB)](assets/architecture/nemotron-ops-commander-architecture-local-16gb.jpg)
 
 ---
 

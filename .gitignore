@@ -64,3 +64,4 @@ nemops_local_ollama/.venv/
 nemops_local_ollama/.env
 nemops_local_ollama/nemops-copilot-prompt-mac16gb.md
 nemops_local_ollama/setup.sh
+
