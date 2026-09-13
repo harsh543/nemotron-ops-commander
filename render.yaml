@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: nemotron-ops-commander
+    runtime: python
+    plan: free
+    rootDir: huggingface_space
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: NEBIUS_API_KEY
+        sync: false
+      - key: NEBIUS_MODEL
+        value: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B
+      - key: MODEL_ID
+        value: nvidia/Nemotron-Mini-4B-Instruct
+      - key: HF_TOKEN
+        sync: false
+      - key: REVENUECAT_PUBLIC_API_KEY
+        sync: false
+      - key: REVENUECAT_SECRET_KEY
+        sync: false
+      - key: REVENUECAT_ENTITLEMENT
+        value: pro
+      - key: REVENUECAT_PACKAGE_ID
+        value: pro_monthly

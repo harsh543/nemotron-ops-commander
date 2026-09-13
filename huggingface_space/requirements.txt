@@ -15,6 +15,7 @@ gradio>=4.15.0
 huggingface-hub>=0.20.0,<1.0
 openai>=1.30.0  # Nebius Token Factory (OpenAI-compatible)
 requests>=2.31.0  # RevenueCat REST API (entitlement checks)
+render>=1.0.1  # Render Workflows SDK (reindex_workflow.py)
 
 # Data
 pydantic>=2.5.0
