@@ -1,0 +1,65 @@
+{
+  "backend": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B (Nebius Token Factory)",
+  "quality_cost_latency": [
+    {
+      "id": "INC-001",
+      "latency_ms": 2721.4,
+      "prompt_tokens": 65,
+      "completion_tokens": 148,
+      "cost_usd": null,
+      "expected_root_cause": "Misconfigured upstream timeout in NGINX",
+      "response": "The recent deployment probably introduced a configuration or code change that broke the connection to an upstream dependency (e.g., the payment gateway or downstream service), causing the payments\u2011api to return 502 errors.",
+      "quality_keyword_match": false
+    },
+    {
+      "id": "INC-002",
+      "latency_ms": 1438.1,
+      "prompt_tokens": 61,
+      "completion_tokens": 109,
+      "cost_usd": null,
+      "expected_root_cause": "Database connection pool exhausted",
+      "response": "The likely root cause is an unexpected surge in authentication requests that overloaded the auth\u2011service\u2019s thread pool, causing request queuing and latency spikes.",
+      "quality_keyword_match": false
+    },
+    {
+      "id": "INC-003",
+      "latency_ms": 1514.4,
+      "prompt_tokens": 58,
+      "completion_tokens": 120,
+      "cost_usd": null,
+      "expected_root_cause": "Disk pressure due to log growth",
+      "response": "The most likely root cause is a failure or resource exhaustion on the underlying node (e.g., CPU/memory pressure, kubelet crash, or network issue) causing the node to become NotReady and disrupt the cluster.",
+      "quality_keyword_match": true
+    },
+    {
+      "id": "INC-004",
+      "latency_ms": 1876.1,
+      "prompt_tokens": 58,
+      "completion_tokens": 106,
+      "cost_usd": null,
+      "expected_root_cause": "Redis eviction policy changed",
+      "response": "The spike in cache miss rate is most likely due to an unexpected increase in request volume or a misapplied cache eviction/invalidation rule causing the cache to purge entries prematurely.",
+      "quality_keyword_match": false
+    },
+    {
+      "id": "INC-005",
+      "latency_ms": 1176.7,
+      "prompt_tokens": 59,
+      "completion_tokens": 147,
+      "cost_usd": null,
+      "expected_root_cause": "Unhandled null pointer in config loader",
+      "response": "The most likely root cause is a recent code/configuration change that introduced an unhandled exception or resource exhaustion, causing the orders\u2011service to crash repeatedly.",
+      "quality_keyword_match": false
+    }
+  ],
+  "concurrency": {
+    "n_incidents": 5,
+    "sequential_s": 6.05,
+    "concurrent_s": 1.95,
+    "speedup": 3.1
+  },
+  "failing_case": {
+    "failed_as_expected": true,
+    "error": "BadRequestError: Error code: 400 - {'error': {'message': 'max_tokens must be at least 1, got 0. (parameter=max_tokens, value=0)', 'type': 'BadRequestError', 'code': 400, 'param': 'max_tokens'}, 'detail': 'Invalid request. Please check the parameters and try again. Details: max_tokens must be at least 1, got 0. (parameter=max_tokens, value=0)'}"
+  }
+}

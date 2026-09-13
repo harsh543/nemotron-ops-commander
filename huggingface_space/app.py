@@ -10,7 +10,9 @@ This is the main entry point for the Gradio Space.
 from __future__ import annotations
 
 import json
+import os
 import time
+import uuid
 from typing import Tuple
 
 import gradio as gr
@@ -202,6 +204,101 @@ def handle_rag(query: str, top_k: int) -> Tuple[str, str]:
     formatted = _format_rag(results, latency_ms)
     raw = json.dumps([r.model_dump() for r in results], indent=2, default=str)
     return formatted, raw
+
+
+# ---------------------------------------------------------------------------
+# Pro tier: concurrent multi-incident triage (Subscriptions / RevenueCat
+# track). Free tier triages one incident at a time on this Space's shared
+# GPU; Pro (unlocked via a RevenueCat Web Billing purchase, Test Store --
+# no real money) fans out to Nebius Token Factory and triages several at
+# once, demonstrating the concurrency a shared free-tier GPU can't offer.
+# ---------------------------------------------------------------------------
+
+PRO_SAMPLE_INCIDENTS = [
+    ("Payment API OOMKilled", "5 restarts in 2 minutes, heap at 94% before kill.", 0.15, 5200),
+    ("CoreDNS resolution failures", "Intermittent DNS timeouts across the cluster.", 0.08, 2100),
+    ("Auth service 401 spike", "JWKS cache stale, old key ID rejected.", 0.22, 800),
+]
+
+
+def new_app_user_id() -> str:
+    return str(uuid.uuid4())
+
+
+def render_purchase_widget(app_user_id: str) -> str:
+    """Rebuilt per-session (via demo.load) so the embedded JS gets this
+    session's own app_user_id baked in directly, rather than trying to
+    thread a Gradio State value into a static HTML string after the fact."""
+    public_key = os.environ.get("REVENUECAT_PUBLIC_API_KEY", "")
+    package_id = os.environ.get("REVENUECAT_PACKAGE_ID", "pro_monthly")
+    if not public_key:
+        return "<i>REVENUECAT_PUBLIC_API_KEY not configured on this Space yet.</i>"
+    return f"""
+    <div>
+      <button id="rc-buy-btn" style="padding:8px 16px;font-weight:600;">Buy Pro (Test Store)</button>
+      <span id="rc-status" style="margin-left:10px;"></span>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/@revenuecat/purchases-js@1.60.1/dist/Purchases.umd.js"></script>
+    <script>
+    (function() {{
+      const appUserId = {json.dumps(app_user_id)};
+      const publicKey = {json.dumps(public_key)};
+      const packageId = {json.dumps(package_id)};
+      const statusEl = document.getElementById('rc-status');
+
+      document.getElementById('rc-buy-btn').addEventListener('click', async () => {{
+        statusEl.textContent = 'Loading offerings...';
+        try {{
+          const purchases = Purchases.configure({{apiKey: publicKey, appUserId: appUserId}});
+          const offerings = await purchases.getOfferings();
+          const pkg = (offerings.current && offerings.current.availablePackages.find(p => p.identifier === packageId))
+            || (offerings.current && offerings.current.availablePackages[0]);
+          if (!pkg) {{ statusEl.textContent = 'No package configured in RevenueCat yet.'; return; }}
+          statusEl.textContent = 'Opening Test Store checkout...';
+          const result = await purchases.purchase({{rcPackage: pkg}});
+          const active = Object.keys(result.customerInfo.entitlements.active);
+          statusEl.textContent = active.length ? 'Purchased! Click "Check Pro status" below.' : 'Purchase did not activate an entitlement.';
+        }} catch (err) {{
+          statusEl.textContent = 'Error: ' + (err && err.message ? err.message : err);
+        }}
+      }});
+    }})();
+    </script>
+    """
+
+
+def check_pro_status(app_user_id: str):
+    from revenuecat_client import is_pro
+
+    unlocked = is_pro(app_user_id)
+    return (
+        gr.update(visible=unlocked),
+        gr.update(visible=not unlocked),
+    )
+
+
+def handle_concurrent_triage(app_user_id: str) -> str:
+    from concurrent.futures import ThreadPoolExecutor
+
+    from revenuecat_client import is_pro
+
+    if not is_pro(app_user_id):
+        return "Pro entitlement not active -- purchase required to run concurrent triage."
+
+    start = time.time()
+    with ThreadPoolExecutor(max_workers=len(PRO_SAMPLE_INCIDENTS)) as pool:
+        results = list(pool.map(lambda args: triage_incident(*args), PRO_SAMPLE_INCIDENTS))
+    wall_ms = (time.time() - start) * 1000
+
+    lines = [f"**{len(results)} incidents triaged concurrently in {wall_ms:.0f}ms wall-clock**\n"]
+    sequential_estimate = sum(r.latency_ms for r in results)
+    lines.append(
+        f"(sequential would take ~{sequential_estimate:.0f}ms -- "
+        f"{sequential_estimate / wall_ms:.1f}x speedup from running in parallel)\n"
+    )
+    for (title, *_rest), result in zip(PRO_SAMPLE_INCIDENTS, results):
+        lines.append(f"- **{title}** — {result.priority}, {result.latency_ms:.0f}ms — {result.impact}")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -427,6 +524,40 @@ def build_ui() -> gr.Blocks:
                     label="Sample queries (click to load)",
                 )
 
+            # ── Tab 5: Pro -- Concurrent Triage (RevenueCat + Nebius) ────
+            with gr.TabItem("Pro: Concurrent Triage"):
+                app_user_id_state = gr.State("")
+
+                gr.Markdown(
+                    "Free tier triages one incident at a time. **Pro** fans out to "
+                    "**Nebius Token Factory** and triages several incidents "
+                    "concurrently -- the throughput a shared free-tier GPU can't give you. "
+                    "This is a RevenueCat **Test Store** purchase: no real money moves."
+                )
+
+                purchase_widget = gr.HTML()
+
+                check_pro_btn = gr.Button("Check Pro status / Unlock")
+
+                with gr.Group(visible=False) as pro_group:
+                    gr.Markdown("**Pro unlocked** — 3 sample incidents, triaged concurrently via Nebius Token Factory:")
+                    run_concurrent_btn = gr.Button("Run concurrent triage", variant="primary")
+                    concurrent_output = gr.Markdown()
+
+                with gr.Group(visible=True) as locked_group:
+                    gr.Markdown("_Not subscribed yet — purchase Pro above, then click \"Check Pro status\"._")
+
+                check_pro_btn.click(
+                    fn=check_pro_status,
+                    inputs=[app_user_id_state],
+                    outputs=[pro_group, locked_group],
+                )
+                run_concurrent_btn.click(
+                    fn=handle_concurrent_triage,
+                    inputs=[app_user_id_state],
+                    outputs=[concurrent_output],
+                )
+
         gr.Markdown(
             "---\n"
             "*Powered by **NVIDIA Full-Stack AI**: "
@@ -434,6 +565,10 @@ def build_ui() -> gr.Blocks:
             "[llama-nemotron-embed-1b-v2](https://huggingface.co/nvidia/llama-nemotron-embed-1b-v2) (Embeddings, 1024 dims)*\n\n"
             "**+20-36% better retrieval** with NVIDIA embeddings | **16× longer context** (8K tokens) | ChromaDB RAG | Built for GTC 2026\n\n"
             "**Local GPU inference** on T4/A10. Set `HF_TOKEN` for gated models. Set `MODEL_ID` to override LLM."
+        )
+
+        demo.load(fn=new_app_user_id, outputs=[app_user_id_state]).then(
+            fn=render_purchase_widget, inputs=[app_user_id_state], outputs=[purchase_widget]
         )
 
     return demo
