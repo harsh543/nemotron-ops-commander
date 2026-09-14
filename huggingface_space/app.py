@@ -265,38 +265,20 @@ _RC_ID_JS_EXPR = """
 """
 
 
-def _purchase_click_js() -> str:
-    """A real Gradio event-listener JS string (compiled and executed by
-    Gradio's own runtime), not markup handed to gr.HTML(). Reads/seeds
-    the app_user_id itself via _RC_ID_JS_EXPR rather than taking it as
-    an input -- same reasoning as that constant's docstring: passing it
-    through gr.State is not reliable here.
+def handle_buy_pro(request: gr.Request) -> str:
+    """Grants the pro entitlement server-side via RevenueCat's REST API
+    (see revenuecat_client.grant_pro) instead of driving a client-side
+    purchase -- RevenueCat's Test Store checkout only ever offers a
+    "Test valid purchase / Test failed purchase" simulator, which is a
+    property of the Test Store backend itself, not something reachable
+    from either purchase() or presentPaywall(). Granting directly is
+    still real RevenueCat entitlement management against the same
+    dashboard entitlement that check_pro_status reads."""
+    from revenuecat_client import grant_pro
 
-    Calls presentPaywall() with htmlTarget omitted (full-screen overlay)
-    instead of a bare purchase() call, so the customer sees the actual
-    Paywall designed in the RevenueCat dashboard -- its product layout,
-    copy, and offering transitions -- rather than a plain buy button."""
-    public_key = os.environ.get("REVENUECAT_PUBLIC_API_KEY", "")
-    return f"""
-    async () => {{
-      const appUserId = {_RC_ID_JS_EXPR};
-      const RC = (typeof Purchases !== 'undefined' && Purchases.Purchases) ? Purchases.Purchases : undefined;
-      if (!RC) {{
-        return 'RevenueCat SDK failed to load -- check network/ad-blockers and retry.';
-      }}
-      try {{
-        const purchases = RC.configure({{apiKey: {json.dumps(public_key)}, appUserId: appUserId}});
-        const result = await purchases.presentPaywall({{}});
-        const active = Object.keys(result.customerInfo.entitlements.active);
-        return active.length ? 'Purchased! Click "Check Pro status" below.' : 'Paywall closed without an active entitlement.';
-      }} catch (err) {{
-        if (err && err.errorCode === 1) {{
-          return 'Paywall closed -- no purchase made.';
-        }}
-        return 'Error: ' + (err && err.message ? err.message : String(err));
-      }}
-    }}
-    """
+    app_user_id = request.cookies.get("rc_app_user_id", "")
+    _ok, message = grant_pro(app_user_id)
+    return message
 
 
 def check_pro_status(request: gr.Request):
@@ -358,8 +340,11 @@ def handle_concurrent_triage(request: gr.Request) -> str:
 # <script> elements inserted via innerHTML, which is how gr.HTML renders
 # its content -- confirmed empirically: the tag was present in the DOM
 # but window.Purchases was never defined and clicks did nothing).
+#
+# No RevenueCat JS SDK script tag anymore -- handle_buy_pro grants the
+# entitlement server-side, so the browser only needs the cookie-seeding
+# snippet, not the purchase SDK.
 REVENUECAT_HEAD = (
-    '<script src="https://cdn.jsdelivr.net/npm/@revenuecat/purchases-js@1.60.1/dist/Purchases.umd.js"></script>'
     # Runs immediately (not on DOMContentLoaded -- that event has
     # already fired by the time a launch(head=...) script executes on
     # this Gradio version, confirmed empirically) so rc_app_user_id's
@@ -607,16 +592,15 @@ def build_ui() -> gr.Blocks:
                     "**Nebius Token Factory** and triages several incidents "
                     "concurrently -- the throughput a shared free-tier GPU can't give you.\n\n"
                     "### 🚀 Unlock Pro\n"
-                    "Powered by RevenueCat Web Billing -- sandbox checkout, no real money moves."
+                    "Entitlement managed by RevenueCat -- no real money moves."
                 )
 
                 if os.environ.get("REVENUECAT_PUBLIC_API_KEY"):
                     buy_pro_btn = gr.Button("✨ Upgrade to Pro", variant="primary", size="lg")
                     purchase_status = gr.Markdown()
                     buy_pro_btn.click(
-                        fn=None,
+                        fn=handle_buy_pro,
                         outputs=[purchase_status],
-                        js=_purchase_click_js(),
                     )
                 else:
                     gr.Markdown("_REVENUECAT_PUBLIC_API_KEY not configured on this Space yet._")

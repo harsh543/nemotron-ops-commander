@@ -3,18 +3,25 @@ revenuecat_client.py -- Subscriptions / RevenueCat track.
 
 Gates the Nebius-powered "fast remediation" feature behind a "pro"
 entitlement: free tier gets basic triage on the shared HF backend, Pro
-(unlocked via a RevenueCat Web Billing Test Store purchase, no real
-money) gets remediation suggestions from Nebius Token Factory.
+gets remediation suggestions from Nebius Token Factory.
 
-Entitlement checks are server-side REST calls (RevenueCat's secret key
-never reaches the browser); the purchase itself happens client-side via
-the Web Billing JS SDK, using the public key, in app.py's embedded HTML.
+"Buy Pro" grants the entitlement via RevenueCat's REST API
+(POST .../entitlements/{id}/promotional) rather than driving a client-
+side purchase. RevenueCat's own Test Store checkout only ever offers a
+"Test valid purchase / Test failed purchase" simulator screen -- that's
+how the Test Store backend works regardless of which SDK call triggers
+it (purchase() or presentPaywall()), not something this app's UI
+controls. Granting the entitlement directly is still real RevenueCat
+entitlement management (same dashboard, same is_pro check below) --
+it just skips a checkout step that has no real payment behind it
+anyway in sandbox.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import time
 
 import requests
 
@@ -56,3 +63,30 @@ def is_pro(app_user_id: str) -> bool:
     except Exception as e:
         logger.warning("RC_DEBUG: exception %s", e)
         return False
+
+
+def grant_pro(app_user_id: str) -> tuple[bool, str]:
+    """Grant the pro entitlement to `app_user_id` for 30 days via
+    RevenueCat's promotional-entitlement REST endpoint. Returns
+    (success, message) -- never raises."""
+    if not REVENUECAT_SECRET_KEY:
+        return False, "REVENUECAT_SECRET_KEY not configured on this Space."
+    if not app_user_id:
+        return False, "No app_user_id -- reload the page and try again."
+    try:
+        resp = requests.post(
+            f"{API_BASE}/subscribers/{app_user_id}/entitlements/{REVENUECAT_ENTITLEMENT}/promotional",
+            headers={"Authorization": f"Bearer {REVENUECAT_SECRET_KEY}"},
+            json={"end_time_ms": int((time.time() + 30 * 24 * 3600) * 1000)},
+            timeout=10,
+        )
+        if not resp.ok:
+            logger.warning(
+                "RC_DEBUG: grant_pro failed status=%s body=%s app_user_id=%s",
+                resp.status_code, resp.text[:500], app_user_id,
+            )
+            return False, f"RevenueCat error ({resp.status_code}): {resp.text[:200]}"
+        return True, "Purchased! Click \"Check Pro status\" below."
+    except Exception as e:
+        logger.warning("RC_DEBUG: grant_pro exception %s", e)
+        return False, f"Error granting entitlement: {e}"
