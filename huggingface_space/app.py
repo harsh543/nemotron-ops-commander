@@ -260,6 +260,7 @@ def _app_user_id_load_js() -> str:
     """
 
 
+
 def _purchase_click_js() -> str:
     """A real Gradio event-listener JS string (compiled and executed by
     Gradio's own runtime), not markup handed to gr.HTML(). Takes the
@@ -599,13 +600,32 @@ def build_ui() -> gr.Blocks:
                 with gr.Group(visible=True) as locked_group:
                     gr.Markdown("_Not subscribed yet — purchase Pro above, then click \"Check Pro status\"._")
 
+                # js= in this Gradio version runs before fn and can only set
+                # *output* components, not transform fn's inputs (unlike
+                # older Gradio) -- so app_user_id_state has to be refreshed
+                # as its own output-only step, chained via .then() into the
+                # real server call, instead of passed through fn's inputs
+                # directly. Reuses the same localStorage read as demo.load,
+                # since app_user_id_state (populated once on page load) was
+                # observed empty on a real deploy (RC_DEBUG: app_user_id is
+                # empty) even right after a successful purchase.
                 check_pro_btn.click(
+                    fn=None,
+                    outputs=[app_user_id_state],
+                    js=_app_user_id_load_js(),
+                    api_visibility="private",
+                ).then(
                     fn=check_pro_status,
                     inputs=[app_user_id_state],
                     outputs=[pro_group, locked_group],
                     api_visibility="private",
                 )
                 run_concurrent_btn.click(
+                    fn=None,
+                    outputs=[app_user_id_state],
+                    js=_app_user_id_load_js(),
+                    api_visibility="private",
+                ).then(
                     fn=handle_concurrent_triage,
                     inputs=[app_user_id_state],
                     outputs=[concurrent_output],

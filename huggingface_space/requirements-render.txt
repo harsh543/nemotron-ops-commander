@@ -9,7 +9,8 @@
 # model previously OOM'd this service on startup.
 
 spaces  # harmless outside real ZeroGPU hardware; keeps app.py's top-level import working
-gradio>=4.15.0
+gradio==6.17.3  # pinned: an unbounded >=4.15.0 silently jumped to 6.x mid-hackathon and
+                # broke click-handler js= semantics (js can no longer transform fn's inputs)
 huggingface-hub>=0.20.0,<1.0
 openai>=1.30.0  # Nebius Token Factory (LLM + embeddings)
 requests>=2.31.0  # RevenueCat REST API (entitlement checks)
