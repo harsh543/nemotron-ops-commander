@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from render import TaskContext, Workflows
+from render import Retry, TaskContext, Workflows
 
 app = Workflows()
 
@@ -78,7 +78,7 @@ async def index_batch_step(ctx: TaskContext, run_key: str, batch_index: int, inc
 
 @app.task(
     name="reindex_knowledge_base",
-    retries={"max_retries": 3, "initial_delay_seconds": 1, "backoff_multiplier": 2},
+    retry=Retry(max_retries=3, wait_duration_ms=1000, backoff_scaling=2),
 )
 async def reindex_knowledge_base(ctx: TaskContext, run_key: str) -> dict:
     incidents = _load_incidents()
