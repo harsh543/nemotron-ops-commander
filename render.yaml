@@ -19,11 +19,7 @@ services:
         value: nvidia/Nemotron-Mini-4B-Instruct
       - key: HF_TOKEN
         sync: false
-      - key: REVENUECAT_PUBLIC_API_KEY
+      - key: PAYPAL_CLIENT_ID
         sync: false
-      - key: REVENUECAT_SECRET_KEY
+      - key: PAYPAL_CLIENT_SECRET
         sync: false
-      - key: REVENUECAT_ENTITLEMENT
-        value: pro
-      - key: REVENUECAT_PACKAGE_ID
-        value: pro_monthly
