@@ -11,6 +11,10 @@ services:
         sync: false
       - key: NEBIUS_MODEL
         value: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B
+      - key: EMBEDDING_BACKEND
+        value: nebius
+      - key: NEBIUS_EMBEDDING_MODEL
+        value: Qwen/Qwen3-Embedding-8B
       - key: MODEL_ID
         value: nvidia/Nemotron-Mini-4B-Instruct
       - key: HF_TOKEN

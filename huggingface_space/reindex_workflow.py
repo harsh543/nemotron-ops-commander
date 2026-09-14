@@ -44,7 +44,10 @@ def _load_incidents() -> list[dict]:
 
 @app.task(name="index_batch_step")
 async def index_batch_step(ctx: TaskContext, run_key: str, batch_index: int, incidents: list[dict]) -> int:
-    from rag_engine import get_rag_engine
+    # Nebius-hosted embeddings, not a local model -- this Workflow service
+    # has the same 512MB RAM ceiling as the web service (see
+    # rag_engine_render.py), which a local embedding model already OOM'd.
+    from rag_engine_render import _embed, get_rag_engine
 
     key = f"{run_key}:{batch_index}"
     attempt = _batch_attempts.get(key, 0) + 1
@@ -53,12 +56,11 @@ async def index_batch_step(ctx: TaskContext, run_key: str, batch_index: int, inc
         raise RuntimeError(f"Simulated transient failure indexing batch {batch_index} -- demonstrates resume")
 
     engine = get_rag_engine()
-    ids, documents, embeddings, metadatas = [], [], [], []
+    ids, documents, metadatas = [], [], []
     for inc in incidents:
         doc_text = f"{inc.get('summary', '')} {inc.get('root_cause', '')} {inc.get('resolution', '')}"
         ids.append(str(inc["id"]))
         documents.append(doc_text)
-        embeddings.append(engine.embedder.encode(doc_text, convert_to_tensor=False).tolist())
         metadatas.append(
             {
                 "title": inc.get("summary", inc.get("title", "")),
@@ -69,6 +71,7 @@ async def index_batch_step(ctx: TaskContext, run_key: str, batch_index: int, inc
                 "tags": ",".join(inc.get("tags", [])),
             }
         )
+    embeddings = _embed(documents)
     engine.collection.upsert(ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas)
     return len(incidents)
 

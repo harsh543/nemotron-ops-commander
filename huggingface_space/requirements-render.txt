@@ -1,20 +1,20 @@
-# Render Web Service build — fully explicit, deliberately independent
-# from requirements.txt (which may assume HF-Space-platform-managed
-# packages like gradio/torch/spaces and is not safe to build on Render).
-# Keep this file in sync manually if huggingface_space/*.py's imports change.
+# Render Web Service build — deliberately independent from
+# requirements.txt (which is tuned for the HF ZeroGPU Space and assumes
+# gradio/torch/spaces are platform-managed there).
+#
+# No local torch/transformers/sentence-transformers here: both LLM
+# inference and RAG embeddings route through Nebius Token Factory
+# (EMBEDDING_BACKEND=nebius, set in render.yaml) so this process stays
+# well under the free tier's 512MB RAM -- loading a local embedding
+# model previously OOM'd this service on startup.
 
-torch
-transformers>=4.37.0
-accelerate>=0.26.0
-
-chromadb>=0.4.22
-sentence-transformers>=2.3.0  # Supports NVIDIA llama-nemotron-embed-1b-v2
-
+spaces  # harmless outside real ZeroGPU hardware; keeps app.py's top-level import working
 gradio>=4.15.0
 huggingface-hub>=0.20.0,<1.0
-openai>=1.30.0  # Nebius Token Factory (OpenAI-compatible)
+openai>=1.30.0  # Nebius Token Factory (LLM + embeddings)
 requests>=2.31.0  # RevenueCat REST API (entitlement checks)
 render>=1.0.1  # Render Workflows SDK (reindex_workflow.py)
+chromadb>=0.4.22  # vector store only -- embeddings come from Nebius, not local
 
 pydantic>=2.5.0
 numpy>=1.24.0

@@ -20,7 +20,16 @@ import gradio as gr
 
 from agents import analyze_logs, optimize_performance, triage_incident
 from inference import get_client
-from rag_engine import EMBEDDING_MODEL, get_rag_engine
+
+# Render deployment (EMBEDDING_BACKEND=nebius, set in render.yaml) has no
+# local GPU and only 512MB RAM -- can't hold torch + a local embedding
+# model (measured: OOM at startup). It uses rag_engine_render.py instead,
+# which embeds via the same hosted Nebius API already used for the LLM.
+# The HF Space's own ZeroGPU rag_engine.py is unchanged either way.
+if os.environ.get("EMBEDDING_BACKEND") == "nebius":
+    from rag_engine_render import EMBEDDING_MODEL, get_rag_engine
+else:
+    from rag_engine import EMBEDDING_MODEL, get_rag_engine
 
 # ---------------------------------------------------------------------------
 # Sample data for quick demos
