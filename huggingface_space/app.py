@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import spaces
 import json
+import logging
 import os
 import time
 from typing import Tuple
@@ -19,6 +20,8 @@ import gradio as gr
 
 from agents import analyze_logs, optimize_performance, triage_incident
 from inference import get_client
+
+logger = logging.getLogger(__name__)
 
 # Render deployment (EMBEDDING_BACKEND=nebius, set in render.yaml) has no
 # local GPU and only 512MB RAM -- can't hold torch + a local embedding
@@ -308,14 +311,21 @@ def handle_concurrent_triage(request: gr.Request) -> str:
 
     from revenuecat_client import is_pro
 
+    logger.warning("CONCURRENT_DEBUG: handle_concurrent_triage called")
     app_user_id = request.cookies.get("rc_app_user_id", "")
     if not is_pro(app_user_id):
+        logger.warning("CONCURRENT_DEBUG: not pro (app_user_id=%s), aborting", app_user_id)
         return "Pro entitlement not active -- purchase required to run concurrent triage."
 
-    start = time.time()
-    with ThreadPoolExecutor(max_workers=len(PRO_SAMPLE_INCIDENTS)) as pool:
-        results = list(pool.map(lambda args: triage_incident(*args), PRO_SAMPLE_INCIDENTS))
-    wall_ms = (time.time() - start) * 1000
+    try:
+        start = time.time()
+        with ThreadPoolExecutor(max_workers=len(PRO_SAMPLE_INCIDENTS)) as pool:
+            results = list(pool.map(lambda args: triage_incident(*args), PRO_SAMPLE_INCIDENTS))
+        wall_ms = (time.time() - start) * 1000
+        logger.warning("CONCURRENT_DEBUG: succeeded, wall_ms=%.0f", wall_ms)
+    except Exception as e:
+        logger.warning("CONCURRENT_DEBUG: exception during triage: %s", e)
+        return f"Error running concurrent triage: {e}"
 
     lines = [f"**{len(results)} incidents triaged concurrently in {wall_ms:.0f}ms wall-clock**\n"]
     sequential_estimate = sum(r.latency_ms for r in results)
