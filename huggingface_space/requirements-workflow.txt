@@ -1,0 +1,10 @@
+# Render Workflow build (reindex_workflow.py) — deliberately minimal.
+# This service only re-indexes the RAG knowledge base; it never imports
+# gradio/spaces/huggingface-hub, so pulling requirements-render.txt in
+# full (built for the web service) wastes build time for no benefit.
+
+render>=1.0.1  # Render Workflows SDK
+openai>=1.30.0  # Nebius Token Factory embeddings
+chromadb>=0.4.22  # vector store
+pydantic>=2.5.0
+numpy>=1.24.0
