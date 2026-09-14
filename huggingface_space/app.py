@@ -270,11 +270,12 @@ def _purchase_click_js() -> str:
     package_id = os.environ.get("REVENUECAT_PACKAGE_ID", "pro_monthly")
     return f"""
     async (appUserId) => {{
-      if (typeof Purchases === 'undefined') {{
+      const RC = (typeof Purchases !== 'undefined' && Purchases.Purchases) ? Purchases.Purchases : undefined;
+      if (!RC) {{
         return 'RevenueCat SDK failed to load -- check network/ad-blockers and retry.';
       }}
       try {{
-        const purchases = Purchases.configure({{apiKey: {json.dumps(public_key)}, appUserId: appUserId}});
+        const purchases = RC.configure({{apiKey: {json.dumps(public_key)}, appUserId: appUserId}});
         const offerings = await purchases.getOfferings();
         const pkg = (offerings.current && offerings.current.availablePackages.find(p => p.identifier === {json.dumps(package_id)}))
           || (offerings.current && offerings.current.availablePackages[0]);
