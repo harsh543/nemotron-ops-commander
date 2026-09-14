@@ -240,7 +240,6 @@ PRO_SAMPLE_INCIDENTS = [
     ("Auth service 401 spike", "JWKS cache stale, old key ID rejected.", 0.22, 800),
     ("Checkout latency spike", "p99 checkout latency up 6x, DB connection pool exhausted.", 0.11, 3400),
 ]
-PRO_PLACEHOLDER = "_waiting..._"
 
 
 # Shared by the page-load head script and the purchase click: generates
@@ -308,12 +307,14 @@ def check_pro_status(request: gr.Request):
     )
 
 
-def handle_concurrent_triage(request: gr.Request):
-    """Returns (summary, panel_1, panel_2, ..., panel_N) -- one Markdown
-    panel per PRO_SAMPLE_INCIDENTS entry, wired to N+1 separate gr.Markdown
-    outputs so the UI visibly shows every incident's result appear at
-    once, instead of one merged block of text that only proves
-    concurrency by a number in a sentence."""
+def handle_concurrent_triage(request: gr.Request) -> str:
+    """Single-string return -- deliberately NOT split across multiple
+    gr.Markdown outputs. A prior version returned (summary, panel_1..N)
+    wired to N+1 separate components; on a live deploy the summary
+    rendered but every panel stayed blank, matching this session's other
+    Gradio-6.17.3 surprises with multi-output click events. One output
+    means there is nothing version-specific left to break -- the table
+    below still visually shows all N incidents' results together."""
     from concurrent.futures import ThreadPoolExecutor
 
     from revenuecat_client import is_pro
@@ -323,8 +324,7 @@ def handle_concurrent_triage(request: gr.Request):
     app_user_id = request.cookies.get("rc_app_user_id", "")
     if not is_pro(app_user_id):
         logger.warning("CONCURRENT_DEBUG: not pro (app_user_id=%s), aborting", app_user_id)
-        locked = "_Pro entitlement not active -- purchase required._"
-        return ("Pro entitlement not active -- purchase required to run concurrent triage.", *([locked] * n))
+        return "Pro entitlement not active -- purchase required to run concurrent triage."
 
     try:
         start = time.time()
@@ -334,8 +334,7 @@ def handle_concurrent_triage(request: gr.Request):
         logger.warning("CONCURRENT_DEBUG: succeeded, wall_ms=%.0f", wall_ms)
     except Exception as e:
         logger.warning("CONCURRENT_DEBUG: exception during triage: %s", e)
-        error = f"Error: {e}"
-        return (f"Error running concurrent triage: {e}", *([error] * n))
+        return f"Error running concurrent triage: {e}"
 
     sequential_estimate = sum(r.latency_ms for r in results)
     summary = (
@@ -343,11 +342,11 @@ def handle_concurrent_triage(request: gr.Request):
         f"(sequential would take ~{sequential_estimate:.0f}ms -- "
         f"{sequential_estimate / wall_ms:.1f}x speedup from running in parallel)"
     )
-    panels = [
-        f"**{title}**\n\n{result.priority} · {result.latency_ms:.0f}ms\n\n{result.impact}"
-        for (title, *_rest), result in zip(PRO_SAMPLE_INCIDENTS, results)
-    ]
-    return (summary, *panels)
+    table = ["| Incident | Priority | Latency | Impact |", "|---|---|---|---|"]
+    for (title, *_rest), result in zip(PRO_SAMPLE_INCIDENTS, results):
+        impact = result.impact.replace("|", "/")
+        table.append(f"| {title} | {result.priority} | {result.latency_ms:.0f}ms | {impact} |")
+    return summary + "\n\n" + "\n".join(table)
 
 
 # RevenueCat Web Billing SDK -- must be passed to launch(head=...), not
@@ -623,16 +622,10 @@ def build_ui() -> gr.Blocks:
                 with gr.Group(visible=False) as pro_group:
                     gr.Markdown(
                         f"**Pro unlocked** — {len(PRO_SAMPLE_INCIDENTS)} sample incidents, "
-                        "triaged concurrently via Nebius Token Factory. Each panel below fires "
-                        "at the same time, not one after another:"
+                        "triaged concurrently via Nebius Token Factory:"
                     )
                     run_concurrent_btn = gr.Button("Run concurrent triage", variant="primary")
-                    concurrent_summary = gr.Markdown()
-                    with gr.Row():
-                        pro_panels = [
-                            gr.Markdown(f"**{title}**\n\n{PRO_PLACEHOLDER}")
-                            for title, *_rest in PRO_SAMPLE_INCIDENTS
-                        ]
+                    concurrent_output = gr.Markdown()
 
                 with gr.Group(visible=True) as locked_group:
                     gr.Markdown("_Not subscribed yet — purchase Pro above, then click \"Check Pro status\"._")
@@ -650,7 +643,7 @@ def build_ui() -> gr.Blocks:
                 )
                 run_concurrent_btn.click(
                     fn=handle_concurrent_triage,
-                    outputs=[concurrent_summary, *pro_panels],
+                    outputs=[concurrent_output],
                     api_visibility="private",
                 )
 
