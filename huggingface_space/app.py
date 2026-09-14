@@ -270,9 +270,13 @@ def _purchase_click_js() -> str:
     Gradio's own runtime), not markup handed to gr.HTML(). Reads/seeds
     the app_user_id itself via _RC_ID_JS_EXPR rather than taking it as
     an input -- same reasoning as that constant's docstring: passing it
-    through gr.State is not reliable here."""
+    through gr.State is not reliable here.
+
+    Calls presentPaywall() with htmlTarget omitted (full-screen overlay)
+    instead of a bare purchase() call, so the customer sees the actual
+    Paywall designed in the RevenueCat dashboard -- its product layout,
+    copy, and offering transitions -- rather than a plain buy button."""
     public_key = os.environ.get("REVENUECAT_PUBLIC_API_KEY", "")
-    package_id = os.environ.get("REVENUECAT_PACKAGE_ID", "pro_monthly")
     return f"""
     async () => {{
       const appUserId = {_RC_ID_JS_EXPR};
@@ -282,14 +286,13 @@ def _purchase_click_js() -> str:
       }}
       try {{
         const purchases = RC.configure({{apiKey: {json.dumps(public_key)}, appUserId: appUserId}});
-        const offerings = await purchases.getOfferings();
-        const pkg = (offerings.current && offerings.current.availablePackages.find(p => p.identifier === {json.dumps(package_id)}))
-          || (offerings.current && offerings.current.availablePackages[0]);
-        if (!pkg) return 'No package configured in RevenueCat yet.';
-        const result = await purchases.purchase({{rcPackage: pkg}});
+        const result = await purchases.presentPaywall({{}});
         const active = Object.keys(result.customerInfo.entitlements.active);
-        return active.length ? 'Purchased! Click "Check Pro status" below.' : 'Purchase did not activate an entitlement.';
+        return active.length ? 'Purchased! Click "Check Pro status" below.' : 'Paywall closed without an active entitlement.';
       }} catch (err) {{
+        if (err && err.errorCode === 1) {{
+          return 'Paywall closed -- no purchase made.';
+        }}
         return 'Error: ' + (err && err.message ? err.message : String(err));
       }}
     }}
@@ -602,12 +605,13 @@ def build_ui() -> gr.Blocks:
                 gr.Markdown(
                     "Free tier triages one incident at a time. **Pro** fans out to "
                     "**Nebius Token Factory** and triages several incidents "
-                    "concurrently -- the throughput a shared free-tier GPU can't give you. "
-                    "This is a RevenueCat **Test Store** purchase: no real money moves."
+                    "concurrently -- the throughput a shared free-tier GPU can't give you.\n\n"
+                    "### 🚀 Unlock Pro\n"
+                    "Powered by RevenueCat Web Billing -- sandbox checkout, no real money moves."
                 )
 
                 if os.environ.get("REVENUECAT_PUBLIC_API_KEY"):
-                    buy_pro_btn = gr.Button("Buy Pro (Test Store)")
+                    buy_pro_btn = gr.Button("✨ Upgrade to Pro", variant="primary", size="lg")
                     purchase_status = gr.Markdown()
                     buy_pro_btn.click(
                         fn=None,
