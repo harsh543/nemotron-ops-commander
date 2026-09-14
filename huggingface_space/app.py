@@ -363,6 +363,89 @@ def handle_concurrent_triage(request: gr.Request) -> str:
     return summary + "\n\n" + "\n".join(table)
 
 
+def handle_concurrent_multitool(request: gr.Request) -> str:
+    """Pro-only: runs all 4 tools -- Log Analysis, Incident Triage,
+    Performance Optimizer, Knowledge Search -- concurrently against sample
+    data via Nebius Token Factory. Distinct from handle_concurrent_triage
+    above (which fans out N *incidents* through the same triage call):
+    this fans out N *different capabilities* at once, so the demo shows
+    parallel debugging across the whole tool surface, not just repeated
+    triage. Single-string return for the same reason as
+    handle_concurrent_triage's docstring -- multi-Markdown-output
+    .click() events silently drop everything past the first output on
+    this Gradio version."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from revenuecat_client import is_pro
+
+    logger.warning("MULTITOOL_DEBUG: handle_concurrent_multitool called")
+    app_user_id = request.cookies.get("rc_app_user_id", "")
+    if not is_pro(app_user_id):
+        logger.warning("MULTITOOL_DEBUG: not pro (app_user_id=%s), aborting", app_user_id)
+        return "Pro entitlement not active -- purchase required to run parallel debugging."
+
+    def _run_analyze():
+        return analyze_logs(SAMPLE_LOGS, system="payment-api", environment="production")
+
+    def _run_triage():
+        return triage_incident(SAMPLE_INCIDENT_TITLE, SAMPLE_INCIDENT_DESC, 0.15, 8500)
+
+    def _run_optimize():
+        return optimize_performance(
+            85, 90, 45, service="ml-inference",
+            context="Production ML inference service running on K8s with A10 GPUs",
+        )
+
+    def _run_rag():
+        engine = get_rag_engine()
+        rag_start = time.time()
+        results = engine.search("pod OOMKilled memory limit kubernetes", top_k=5)
+        return results, (time.time() - rag_start) * 1000
+
+    tasks = {
+        "analysis": _run_analyze,
+        "triage": _run_triage,
+        "optimize": _run_optimize,
+        "rag": _run_rag,
+    }
+
+    try:
+        start = time.time()
+        with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
+            futures = {name: pool.submit(fn) for name, fn in tasks.items()}
+            outcomes = {name: f.result() for name, f in futures.items()}
+        wall_ms = (time.time() - start) * 1000
+        logger.warning("MULTITOOL_DEBUG: succeeded, wall_ms=%.0f", wall_ms)
+    except Exception as e:
+        logger.warning("MULTITOOL_DEBUG: exception during run: %s", e)
+        return f"Error running parallel debugging: {e}"
+
+    analysis_result = outcomes["analysis"]
+    triage_result = outcomes["triage"]
+    optimize_result = outcomes["optimize"]
+    rag_results, rag_latency_ms = outcomes["rag"]
+
+    sequential_estimate = (
+        analysis_result.latency_ms
+        + triage_result.latency_ms
+        + optimize_result.latency_ms
+        + rag_latency_ms
+    )
+    summary = (
+        f"**4 tools (Log Analysis, Incident Triage, Performance Optimizer, "
+        f"Knowledge Search) run concurrently in {wall_ms:.0f}ms wall-clock** "
+        f"(sequential would take ~{sequential_estimate:.0f}ms -- "
+        f"{sequential_estimate / wall_ms:.1f}x speedup from running in parallel)"
+    )
+    formatted_sections = [
+        _format_analysis(analysis_result),
+        _format_triage(triage_result),
+        _format_optimization(optimize_result),
+        _format_rag(rag_results, rag_latency_ms),
+    ]
+    return summary + "\n\n---\n\n" + "\n\n---\n\n".join(formatted_sections)
+
+
 # RevenueCat Web Billing SDK -- must be passed to launch(head=...), not
 # Blocks(head=...) (not a supported Blocks kwarg in this Gradio version)
 # and not rendered inside a gr.HTML() component (browsers never execute
@@ -644,6 +727,13 @@ def build_ui() -> gr.Blocks:
                     run_concurrent_btn = gr.Button("Run concurrent triage", variant="primary")
                     concurrent_output = gr.Markdown()
 
+                    gr.Markdown(
+                        "**Parallel debugging** — run Log Analysis, Incident Triage, "
+                        "Performance Optimizer, and Knowledge Search all at once:"
+                    )
+                    run_multitool_btn = gr.Button("Run parallel debugging (4 tools)", variant="primary")
+                    multitool_output = gr.Markdown()
+
                 with gr.Group(visible=True) as locked_group:
                     gr.Markdown("_Not subscribed yet — purchase Pro above, then click \"Check Pro status\"._")
 
@@ -661,6 +751,11 @@ def build_ui() -> gr.Blocks:
                 run_concurrent_btn.click(
                     fn=handle_concurrent_triage,
                     outputs=[concurrent_output],
+                    api_visibility="private",
+                )
+                run_multitool_btn.click(
+                    fn=handle_concurrent_multitool,
+                    outputs=[multitool_output],
                     api_visibility="private",
                 )
 
