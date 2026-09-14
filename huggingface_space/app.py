@@ -238,39 +238,40 @@ PRO_SAMPLE_INCIDENTS = [
 ]
 
 
-def _app_user_id_load_js() -> str:
-    """Runs client-side only (fn=None) to seed app_user_id_state.
-
-    A Python fn writing to gr.State here does not reliably reach a
-    same-page js= click handler's inputs (verified empirically: the
-    click handler saw appUserId as null even seconds after the
-    server-side load had completed). Generating and persisting the id
-    entirely in JS -- read by the same reactive store the click
-    handler's inputs pull from -- sidesteps that gap, and as a bonus
-    survives page reloads so "Check Pro status" keeps working."""
-    return """
-    () => {
-      let id = localStorage.getItem('rc_app_user_id');
-      if (!id) {
-        id = 'anon-' + crypto.randomUUID();
-        localStorage.setItem('rc_app_user_id', id);
-      }
-      return id;
-    }
-    """
-
+# Shared by the page-load head script and the purchase click: generates
+# (or reuses) rc_app_user_id in localStorage, and -- critically -- also
+# mirrors it into a cookie. A Python fn can't read a js-computed value
+# out of gr.State reliably: verified with a minimal repro that
+# `.click(fn=None, outputs=[a_state], js=...)` reports success but the
+# state read back by a following server call is still '' (empty), with
+# no error surfaced anywhere -- a real gap in this Gradio version, not
+# a timing issue. A cookie sidesteps gr.State entirely: the browser
+# attaches it to every request automatically, and any server-side fn
+# reads it straight off `request.cookies`, no js/state plumbing at all.
+_RC_ID_JS_EXPR = """
+(function() {
+  let id = localStorage.getItem('rc_app_user_id');
+  if (!id) {
+    id = 'anon-' + crypto.randomUUID();
+    localStorage.setItem('rc_app_user_id', id);
+  }
+  document.cookie = 'rc_app_user_id=' + id + '; path=/; max-age=31536000; samesite=lax';
+  return id;
+})()
+"""
 
 
 def _purchase_click_js() -> str:
     """A real Gradio event-listener JS string (compiled and executed by
-    Gradio's own runtime), not markup handed to gr.HTML(). Takes the
-    session's app_user_id as its one input, returns the status line as
-    its one output -- both wired through .click(inputs=..., outputs=...)
-    below, not baked into a rendered string."""
+    Gradio's own runtime), not markup handed to gr.HTML(). Reads/seeds
+    the app_user_id itself via _RC_ID_JS_EXPR rather than taking it as
+    an input -- same reasoning as that constant's docstring: passing it
+    through gr.State is not reliable here."""
     public_key = os.environ.get("REVENUECAT_PUBLIC_API_KEY", "")
     package_id = os.environ.get("REVENUECAT_PACKAGE_ID", "pro_monthly")
     return f"""
-    async (appUserId) => {{
+    async () => {{
+      const appUserId = {_RC_ID_JS_EXPR};
       const RC = (typeof Purchases !== 'undefined' && Purchases.Purchases) ? Purchases.Purchases : undefined;
       if (!RC) {{
         return 'RevenueCat SDK failed to load -- check network/ad-blockers and retry.';
@@ -291,9 +292,10 @@ def _purchase_click_js() -> str:
     """
 
 
-def check_pro_status(app_user_id: str):
+def check_pro_status(request: gr.Request):
     from revenuecat_client import is_pro
 
+    app_user_id = request.cookies.get("rc_app_user_id", "")
     unlocked = is_pro(app_user_id)
     return (
         gr.update(visible=unlocked),
@@ -301,11 +303,12 @@ def check_pro_status(app_user_id: str):
     )
 
 
-def handle_concurrent_triage(app_user_id: str) -> str:
+def handle_concurrent_triage(request: gr.Request) -> str:
     from concurrent.futures import ThreadPoolExecutor
 
     from revenuecat_client import is_pro
 
+    app_user_id = request.cookies.get("rc_app_user_id", "")
     if not is_pro(app_user_id):
         return "Pro entitlement not active -- purchase required to run concurrent triage."
 
@@ -333,6 +336,12 @@ def handle_concurrent_triage(app_user_id: str) -> str:
 # but window.Purchases was never defined and clicks did nothing).
 REVENUECAT_HEAD = (
     '<script src="https://cdn.jsdelivr.net/npm/@revenuecat/purchases-js@1.60.1/dist/Purchases.umd.js"></script>'
+    # Runs immediately (not on DOMContentLoaded -- that event has
+    # already fired by the time a launch(head=...) script executes on
+    # this Gradio version, confirmed empirically) so rc_app_user_id's
+    # cookie is present before any click, including a bare page reload
+    # after a purchase made in an earlier session.
+    f"<script>{_RC_ID_JS_EXPR}</script>"
     if os.environ.get("REVENUECAT_PUBLIC_API_KEY")
     else None
 )
@@ -569,8 +578,6 @@ def build_ui() -> gr.Blocks:
 
             # ── Tab 5: Pro -- Concurrent Triage (RevenueCat + Nebius) ────
             with gr.TabItem("Pro: Concurrent Triage"):
-                app_user_id_state = gr.State("")
-
                 gr.Markdown(
                     "Free tier triages one incident at a time. **Pro** fans out to "
                     "**Nebius Token Factory** and triages several incidents "
@@ -583,7 +590,6 @@ def build_ui() -> gr.Blocks:
                     purchase_status = gr.Markdown()
                     buy_pro_btn.click(
                         fn=None,
-                        inputs=[app_user_id_state],
                         outputs=[purchase_status],
                         js=_purchase_click_js(),
                     )
@@ -600,34 +606,19 @@ def build_ui() -> gr.Blocks:
                 with gr.Group(visible=True) as locked_group:
                     gr.Markdown("_Not subscribed yet — purchase Pro above, then click \"Check Pro status\"._")
 
-                # js= in this Gradio version runs before fn and can only set
-                # *output* components, not transform fn's inputs (unlike
-                # older Gradio) -- so app_user_id_state has to be refreshed
-                # as its own output-only step, chained via .then() into the
-                # real server call, instead of passed through fn's inputs
-                # directly. Reuses the same localStorage read as demo.load,
-                # since app_user_id_state (populated once on page load) was
-                # observed empty on a real deploy (RC_DEBUG: app_user_id is
-                # empty) even right after a successful purchase.
+                # app_user_id travels via the rc_app_user_id cookie (seeded by
+                # RC_ID_HEAD_SCRIPT on page load, see REVENUECAT_HEAD), read
+                # server-side off gr.Request in check_pro_status /
+                # handle_concurrent_triage -- not through gr.State, which a
+                # minimal repro showed silently fails to carry a js-computed
+                # value into a real fn call on this Gradio version.
                 check_pro_btn.click(
-                    fn=None,
-                    outputs=[app_user_id_state],
-                    js=_app_user_id_load_js(),
-                    api_visibility="private",
-                ).then(
                     fn=check_pro_status,
-                    inputs=[app_user_id_state],
                     outputs=[pro_group, locked_group],
                     api_visibility="private",
                 )
                 run_concurrent_btn.click(
-                    fn=None,
-                    outputs=[app_user_id_state],
-                    js=_app_user_id_load_js(),
-                    api_visibility="private",
-                ).then(
                     fn=handle_concurrent_triage,
-                    inputs=[app_user_id_state],
                     outputs=[concurrent_output],
                     api_visibility="private",
                 )
@@ -639,13 +630,6 @@ def build_ui() -> gr.Blocks:
             "[llama-nemotron-embed-1b-v2](https://huggingface.co/nvidia/llama-nemotron-embed-1b-v2) (Embeddings, 1024 dims)*\n\n"
             "**+20-36% better retrieval** with NVIDIA embeddings | **16× longer context** (8K tokens) | ChromaDB RAG | Built for GTC 2026\n\n"
             "**Local GPU inference** on T4/A10. Set `HF_TOKEN` for gated models. Set `MODEL_ID` to override LLM."
-        )
-
-        demo.load(
-            fn=None,
-            outputs=[app_user_id_state],
-            js=_app_user_id_load_js(),
-            api_visibility="private",
         )
 
     return demo
