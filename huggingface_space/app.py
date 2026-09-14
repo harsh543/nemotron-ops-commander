@@ -227,14 +227,11 @@ def handle_rag(query: str, top_k: int) -> Tuple[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Pro tier: concurrent multi-incident triage (Subscriptions track). Free
-# tier triages one incident at a time on this Space's shared GPU; Pro
-# (unlocked via a real PayPal sandbox payment) fans out to Nebius Token
-# Factory and triages several at once, demonstrating the concurrency a
-# shared free-tier GPU can't offer. One button: click it, it pays and
-# immediately runs the concurrent triage in the same response -- no
-# separate "check status" step, no picker of test outcomes to click
-# through (that was RevenueCat Test Store's own sandbox UI, not ours).
+# Pro tier: concurrent multi-incident triage (Subscriptions / RevenueCat
+# track). Free tier triages one incident at a time on this Space's shared
+# GPU; Pro (unlocked via a RevenueCat Web Billing purchase, Test Store --
+# no real money) fans out to Nebius Token Factory and triages several at
+# once, demonstrating the concurrency a shared free-tier GPU can't offer.
 # ---------------------------------------------------------------------------
 
 PRO_SAMPLE_INCIDENTS = [
@@ -243,53 +240,94 @@ PRO_SAMPLE_INCIDENTS = [
     ("Auth service 401 spike", "JWKS cache stale, old key ID rejected.", 0.22, 800),
 ]
 
-PRO_PRICE = 0.99
-PRO_CURRENCY = "USD"
+
+# Shared by the page-load head script and the purchase click: generates
+# (or reuses) rc_app_user_id in localStorage, and -- critically -- also
+# mirrors it into a cookie. A Python fn can't read a js-computed value
+# out of gr.State reliably: verified with a minimal repro that
+# `.click(fn=None, outputs=[a_state], js=...)` reports success but the
+# state read back by a following server call is still '' (empty), with
+# no error surfaced anywhere -- a real gap in this Gradio version, not
+# a timing issue. A cookie sidesteps gr.State entirely: the browser
+# attaches it to every request automatically, and any server-side fn
+# reads it straight off `request.cookies`, no js/state plumbing at all.
+_RC_ID_JS_EXPR = """
+(function() {
+  let id = localStorage.getItem('rc_app_user_id');
+  if (!id) {
+    id = 'anon-' + crypto.randomUUID();
+    localStorage.setItem('rc_app_user_id', id);
+  }
+  document.cookie = 'rc_app_user_id=' + id + '; path=/; max-age=31536000; samesite=lax';
+  return id;
+})()
+"""
 
 
-def handle_paypal_buy_pro() -> str:
-    """Pay via PayPal sandbox, then immediately run the concurrent triage
-    as the unlocked Pro feature -- one click, one response."""
+def _purchase_click_js() -> str:
+    """A real Gradio event-listener JS string (compiled and executed by
+    Gradio's own runtime), not markup handed to gr.HTML(). Reads/seeds
+    the app_user_id itself via _RC_ID_JS_EXPR rather than taking it as
+    an input -- same reasoning as that constant's docstring: passing it
+    through gr.State is not reliable here."""
+    public_key = os.environ.get("REVENUECAT_PUBLIC_API_KEY", "")
+    package_id = os.environ.get("REVENUECAT_PACKAGE_ID", "pro_monthly")
+    return f"""
+    async () => {{
+      const appUserId = {_RC_ID_JS_EXPR};
+      const RC = (typeof Purchases !== 'undefined' && Purchases.Purchases) ? Purchases.Purchases : undefined;
+      if (!RC) {{
+        return 'RevenueCat SDK failed to load -- check network/ad-blockers and retry.';
+      }}
+      try {{
+        const purchases = RC.configure({{apiKey: {json.dumps(public_key)}, appUserId: appUserId}});
+        const offerings = await purchases.getOfferings();
+        const pkg = (offerings.current && offerings.current.availablePackages.find(p => p.identifier === {json.dumps(package_id)}))
+          || (offerings.current && offerings.current.availablePackages[0]);
+        if (!pkg) return 'No package configured in RevenueCat yet.';
+        const result = await purchases.purchase({{rcPackage: pkg}});
+        const active = Object.keys(result.customerInfo.entitlements.active);
+        return active.length ? 'Purchased! Click "Check Pro status" below.' : 'Purchase did not activate an entitlement.';
+      }} catch (err) {{
+        return 'Error: ' + (err && err.message ? err.message : String(err));
+      }}
+    }}
+    """
+
+
+def check_pro_status(request: gr.Request):
+    from revenuecat_client import is_pro
+
+    app_user_id = request.cookies.get("rc_app_user_id", "")
+    unlocked = is_pro(app_user_id)
+    return (
+        gr.update(visible=unlocked),
+        gr.update(visible=not unlocked),
+    )
+
+
+def handle_concurrent_triage(request: gr.Request) -> str:
     from concurrent.futures import ThreadPoolExecutor
 
-    from paypal_client import PayPalAuth, PayPalError, pay_with_test_card
+    from revenuecat_client import is_pro
 
-    client_id = os.environ.get("PAYPAL_CLIENT_ID")
-    client_secret = os.environ.get("PAYPAL_CLIENT_SECRET")
-    if not client_id or not client_secret:
-        return "PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET not configured on this service yet."
-
-    try:
-        auth = PayPalAuth(client_id, client_secret)
-        payment = pay_with_test_card(
-            auth,
-            amount=PRO_PRICE,
-            currency=PRO_CURRENCY,
-            description="Nemotron Ops Commander Pro (concurrent triage)",
-        )
-        logger.warning("PAYPAL_DEBUG: captured order=%s capture=%s", payment["orderId"], payment["captureId"])
-    except PayPalError as e:
-        logger.warning("PAYPAL_DEBUG: payment failed: %s", e)
-        return f"Payment failed: {e}"
+    logger.warning("CONCURRENT_DEBUG: handle_concurrent_triage called")
+    app_user_id = request.cookies.get("rc_app_user_id", "")
+    if not is_pro(app_user_id):
+        logger.warning("CONCURRENT_DEBUG: not pro (app_user_id=%s), aborting", app_user_id)
+        return "Pro entitlement not active -- purchase required to run concurrent triage."
 
     try:
         start = time.time()
         with ThreadPoolExecutor(max_workers=len(PRO_SAMPLE_INCIDENTS)) as pool:
             results = list(pool.map(lambda args: triage_incident(*args), PRO_SAMPLE_INCIDENTS))
         wall_ms = (time.time() - start) * 1000
+        logger.warning("CONCURRENT_DEBUG: succeeded, wall_ms=%.0f", wall_ms)
     except Exception as e:
-        logger.warning("PAYPAL_DEBUG: paid ok but triage failed: %s", e)
-        return (
-            f"**Payment captured** — PayPal order `{payment['orderId']}`, "
-            f"capture `{payment['captureId']}`, {payment['amount']} {payment['currency']}\n\n"
-            f"Error running concurrent triage: {e}"
-        )
+        logger.warning("CONCURRENT_DEBUG: exception during triage: %s", e)
+        return f"Error running concurrent triage: {e}"
 
-    lines = [
-        f"**Payment captured** — PayPal order `{payment['orderId']}`, "
-        f"capture `{payment['captureId']}`, {payment['amount']} {payment['currency']}\n",
-        f"**{len(results)} incidents triaged concurrently in {wall_ms:.0f}ms wall-clock**\n",
-    ]
+    lines = [f"**{len(results)} incidents triaged concurrently in {wall_ms:.0f}ms wall-clock**\n"]
     sequential_estimate = sum(r.latency_ms for r in results)
     lines.append(
         f"(sequential would take ~{sequential_estimate:.0f}ms -- "
@@ -298,6 +336,25 @@ def handle_paypal_buy_pro() -> str:
     for (title, *_rest), result in zip(PRO_SAMPLE_INCIDENTS, results):
         lines.append(f"- **{title}** — {result.priority}, {result.latency_ms:.0f}ms — {result.impact}")
     return "\n".join(lines)
+
+
+# RevenueCat Web Billing SDK -- must be passed to launch(head=...), not
+# Blocks(head=...) (not a supported Blocks kwarg in this Gradio version)
+# and not rendered inside a gr.HTML() component (browsers never execute
+# <script> elements inserted via innerHTML, which is how gr.HTML renders
+# its content -- confirmed empirically: the tag was present in the DOM
+# but window.Purchases was never defined and clicks did nothing).
+REVENUECAT_HEAD = (
+    '<script src="https://cdn.jsdelivr.net/npm/@revenuecat/purchases-js@1.60.1/dist/Purchases.umd.js"></script>'
+    # Runs immediately (not on DOMContentLoaded -- that event has
+    # already fired by the time a launch(head=...) script executes on
+    # this Gradio version, confirmed empirically) so rc_app_user_id's
+    # cookie is present before any click, including a bare page reload
+    # after a purchase made in an earlier session.
+    f"<script>{_RC_ID_JS_EXPR}</script>"
+    if os.environ.get("REVENUECAT_PUBLIC_API_KEY")
+    else None
+)
 
 
 # ---------------------------------------------------------------------------
@@ -529,25 +586,52 @@ def build_ui() -> gr.Blocks:
                     label="Sample queries (click to load)",
                 )
 
-            # ── Tab 5: Pro -- Concurrent Triage (PayPal + Nebius) ────
+            # ── Tab 5: Pro -- Concurrent Triage (RevenueCat + Nebius) ────
             with gr.TabItem("Pro: Concurrent Triage"):
                 gr.Markdown(
                     "Free tier triages one incident at a time. **Pro** fans out to "
                     "**Nebius Token Factory** and triages several incidents "
                     "concurrently -- the throughput a shared free-tier GPU can't give you. "
-                    f"This is a real **PayPal sandbox** payment (${PRO_PRICE:.2f}, no real money)."
+                    "This is a RevenueCat **Test Store** purchase: no real money moves."
                 )
 
-                if os.environ.get("PAYPAL_CLIENT_ID"):
-                    buy_pro_btn = gr.Button(f"Buy Pro (${PRO_PRICE:.2f}, PayPal Sandbox)", variant="primary")
-                    pro_output = gr.Markdown()
+                if os.environ.get("REVENUECAT_PUBLIC_API_KEY"):
+                    buy_pro_btn = gr.Button("Buy Pro (Test Store)")
+                    purchase_status = gr.Markdown()
                     buy_pro_btn.click(
-                        fn=handle_paypal_buy_pro,
-                        outputs=[pro_output],
-                        api_visibility="private",
+                        fn=None,
+                        outputs=[purchase_status],
+                        js=_purchase_click_js(),
                     )
                 else:
-                    gr.Markdown("_PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET not configured on this service yet._")
+                    gr.Markdown("_REVENUECAT_PUBLIC_API_KEY not configured on this Space yet._")
+
+                check_pro_btn = gr.Button("Check Pro status / Unlock")
+
+                with gr.Group(visible=False) as pro_group:
+                    gr.Markdown("**Pro unlocked** — 3 sample incidents, triaged concurrently via Nebius Token Factory:")
+                    run_concurrent_btn = gr.Button("Run concurrent triage", variant="primary")
+                    concurrent_output = gr.Markdown()
+
+                with gr.Group(visible=True) as locked_group:
+                    gr.Markdown("_Not subscribed yet — purchase Pro above, then click \"Check Pro status\"._")
+
+                # app_user_id travels via the rc_app_user_id cookie (seeded by
+                # RC_ID_HEAD_SCRIPT on page load, see REVENUECAT_HEAD), read
+                # server-side off gr.Request in check_pro_status /
+                # handle_concurrent_triage -- not through gr.State, which a
+                # minimal repro showed silently fails to carry a js-computed
+                # value into a real fn call on this Gradio version.
+                check_pro_btn.click(
+                    fn=check_pro_status,
+                    outputs=[pro_group, locked_group],
+                    api_visibility="private",
+                )
+                run_concurrent_btn.click(
+                    fn=handle_concurrent_triage,
+                    outputs=[concurrent_output],
+                    api_visibility="private",
+                )
 
         gr.Markdown(
             "---\n"
@@ -572,4 +656,5 @@ if __name__ == "__main__":
         server_port=int(os.environ.get("PORT", 7860)),
         mcp_server=True,
         theme=gr.themes.Base(primary_hue="green", neutral_hue="slate"),
+        head=REVENUECAT_HEAD,
     )
