@@ -12,6 +12,7 @@ remote HF Inference API if no GPU is available.
 
 from __future__ import annotations
 
+import spaces
 import logging
 import os
 import time
@@ -141,10 +142,10 @@ class LLMClient:
                 self._model = AutoModelForCausalLM.from_pretrained(
                     model_id,
                     token=HF_TOKEN,
-                    torch_dtype=torch.float16,
-                    device_map="auto",
+                    dtype=torch.bfloat16,
+                    attn_implementation="sdpa",
                     trust_remote_code=True,
-                )
+                ).eval().to("cuda")
                 self._device = "cuda"
                 self.backend = "local"
                 self.active_model = model_id
@@ -281,7 +282,11 @@ class LLMClient:
             )
 
         new_tokens = outputs[0][inputs["input_ids"].shape[1]:]
-        result = self._tokenizer.decode(new_tokens, skip_special_tokens=True)
+        result = self._tokenizer.decode(
+            new_tokens,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
         latency_ms = (time.time() - start) * 1000
         return result.strip(), latency_ms
 

@@ -4,11 +4,13 @@ emoji: "\U0001F6E1\uFE0F"
 colorFrom: green
 colorTo: gray
 sdk: gradio
-sdk_version: "4.44.0"
+sdk_version: "6.27.0"
 app_file: app.py
 pinned: false
 license: apache-2.0
 short_description: AI-Powered Incident Response for SRE Teams
+python_version: "3.12"
+startup_duration_timeout: 1h
 ---
 
 # Nemotron-Ops-Commander
@@ -21,7 +23,7 @@ short_description: AI-Powered Incident Response for SRE Teams
 |-----------|-----------|-------------|
 | **LLM** | [Nemotron-Mini-4B-Instruct](https://huggingface.co/nvidia/Nemotron-Mini-4B-Instruct) | Native tool-calling, 50% smaller than 8B models, T4-compatible |
 | **Embeddings** | [llama-nemotron-embed-1b-v2](https://huggingface.co/nvidia/llama-nemotron-embed-1b-v2) (1024 dims) | **+20-36% better retrieval**, 16× longer context (8K tokens) |
-| **GPU** | NVIDIA T4 (16GB VRAM) | Local inference, edge-deployable |
+| **GPU** | Hugging Face ZeroGPU (NVIDIA Blackwell) | Serverless GPU inference |
 | **Stack** | PyTorch + CUDA + Transformers | Optimized NVIDIA ecosystem |
 
 When a production service goes down, this system automates the first critical minutes: analyzing logs, classifying severity, identifying root causes, and surfacing similar historical incidents with proven resolutions.
@@ -45,8 +47,8 @@ When a production service goes down, this system automates the first critical mi
 
 ### Inference
 
-- **On GPU Spaces (T4/A10)**: Loads the model directly onto the GPU using `transformers` with `torch.float16` and `device_map="auto"` for fast local inference (~200-500ms per query)
-- **On CPU Spaces**: Falls back to the HuggingFace Inference API (serverless)
+- **On this ZeroGPU Space**: Loads the model once with `transformers` and allocates GPU capacity only while a request runs
+- **On CPU-only environments**: Falls back to the Hugging Face Inference API
 - **Model priority**: Nemotron-Mini-4B-Instruct (primary), Phi-3-mini-4k-instruct (fallback)
 
 ### RAG Pipeline (NVIDIA-Powered)
@@ -105,13 +107,12 @@ Set these as **Space Secrets** for optimal performance:
 
 | Secret | Description |
 |--------|-------------|
-| `HF_TOKEN` | HuggingFace token — required for gated models (Nemotron) and higher Inference API rate limits |
+| `HF_TOKEN` | Optional Hugging Face token for private/gated model access or higher Inference API rate limits |
 | `MODEL_ID` | Override default model (default: `nvidia/Nemotron-Mini-4B-Instruct`) |
 
-### Hardware Recommendation
+### Hardware
 
-- **T4 Small** (16GB VRAM) — recommended for local GPU inference, Nemotron-Mini-4B fits in ~8GB fp16
-- **CPU Basic** — works via HF Inference API fallback, but slower (10-30s per query)
+This deployment targets **ZeroGPU** so it can run on a free Hugging Face account. The 4B Nemotron LLM and 1B embedding model fit comfortably in the default ZeroGPU allocation.
 
 ---
 

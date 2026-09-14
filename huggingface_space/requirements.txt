@@ -1,22 +1,18 @@
-# Nemotron-Ops-Commander — HuggingFace Space (T4 GPU)
-# Local GPU inference + RAG pipeline
+# Nemotron-Ops-Commander — Hugging Face ZeroGPU Space
+# Gradio, spaces, huggingface_hub, and torch are platform-managed.
 
-# LLM inference (local GPU)
-torch
-transformers>=4.37.0
-accelerate>=0.26.0
+# NVIDIA model inference
+transformers==5.17.0
+sentencepiece>=0.2.0,<1
 
 # RAG & embeddings
-chromadb>=0.4.22
-sentence-transformers>=2.3.0  # Supports NVIDIA llama-nemotron-embed-1b-v2
+chromadb==1.5.9
+sentence-transformers==6.0.1
 
-# UI & API
-gradio>=4.15.0
-huggingface-hub>=0.20.0,<1.0
-openai>=1.30.0  # Nebius Token Factory (OpenAI-compatible)
-requests>=2.31.0  # RevenueCat REST API (entitlement checks)
-render>=1.0.1  # Render Workflows SDK (reindex_workflow.py)
+# Optional hosted inference and subscription integration
+openai>=1.30.0,<3
+requests>=2.31.0,<3
 
 # Data
-pydantic>=2.5.0
-numpy>=1.24.0
+pydantic>=2.5.0,<3
+numpy>=1.26.0,<3

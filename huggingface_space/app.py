@@ -9,6 +9,7 @@ This is the main entry point for the Gradio Space.
 
 from __future__ import annotations
 
+import spaces
 import json
 import os
 import time
@@ -165,7 +166,9 @@ def _format_rag(results, latency_ms: float) -> str:
 # Tab handlers
 # ---------------------------------------------------------------------------
 
+@spaces.GPU(duration=120)
 def handle_analyze(log_text: str, system: str, environment: str) -> Tuple[str, str]:
+    """Analyze service logs and return a readable diagnosis plus structured JSON."""
     if not log_text.strip():
         return "Please paste some log entries.", "{}"
 
@@ -175,7 +178,9 @@ def handle_analyze(log_text: str, system: str, environment: str) -> Tuple[str, s
     return formatted, raw
 
 
+@spaces.GPU(duration=120)
 def handle_triage(title: str, description: str, error_rate: float, latency_p99: float) -> Tuple[str, str]:
+    """Classify an incident and return impact, affected services, and next steps."""
     if not description.strip():
         return "Please provide an incident description.", "{}"
 
@@ -185,14 +190,18 @@ def handle_triage(title: str, description: str, error_rate: float, latency_p99: 
     return formatted, raw
 
 
+@spaces.GPU(duration=120)
 def handle_optimize(cpu: float, memory: float, gpu: float, service: str, context: str) -> Tuple[str, str]:
+    """Recommend performance improvements for the supplied service metrics."""
     result = optimize_performance(cpu, memory, gpu, service=service or "unknown", context=context)
     formatted = _format_optimization(result)
     raw = json.dumps(result.model_dump(), indent=2, default=str)
     return formatted, raw
 
 
+@spaces.GPU(duration=120)
 def handle_rag(query: str, top_k: int) -> Tuple[str, str]:
+    """Search the bundled incident knowledge base with NVIDIA embeddings."""
     if not query.strip():
         return "Please enter a search query.", "{}"
 
@@ -317,11 +326,9 @@ def build_ui() -> gr.Blocks:
     except Exception:
         model_name = "initializing..."
 
-    theme = gr.themes.Base(primary_hue="green", neutral_hue="slate")
-
     embedding_label = EMBEDDING_MODEL.split("/")[-1]
 
-    with gr.Blocks(title="Nemotron-Ops-Commander", theme=theme) as demo:
+    with gr.Blocks(title="Nemotron-Ops-Commander") as demo:
         gr.Markdown(
             "# Nemotron-Ops-Commander\n"
             "**AI-Powered Incident Response** for SRE Teams\n\n"
@@ -355,6 +362,8 @@ def build_ui() -> gr.Blocks:
                     fn=handle_analyze,
                     inputs=[log_input, system_input, env_input],
                     outputs=[analysis_output, analysis_raw],
+                    api_name="analyze_logs",
+                    concurrency_limit=1,
                 )
 
                 gr.Examples(
@@ -398,6 +407,8 @@ def build_ui() -> gr.Blocks:
                     fn=handle_triage,
                     inputs=[title_input, desc_input, error_rate, latency_input],
                     outputs=[triage_output, triage_raw],
+                    api_name="triage_incident",
+                    concurrency_limit=1,
                 )
 
                 gr.Examples(
@@ -460,6 +471,8 @@ def build_ui() -> gr.Blocks:
                     fn=handle_optimize,
                     inputs=[cpu_slider, mem_slider, gpu_slider, svc_input, ctx_input],
                     outputs=[opt_output, opt_raw],
+                    api_name="optimize_performance",
+                    concurrency_limit=1,
                 )
 
                 gr.Examples(
@@ -510,6 +523,8 @@ def build_ui() -> gr.Blocks:
                     fn=handle_rag,
                     inputs=[rag_query, rag_topk],
                     outputs=[rag_output, rag_raw],
+                    api_name="search_incidents",
+                    concurrency_limit=1,
                 )
 
                 gr.Examples(
@@ -551,11 +566,13 @@ def build_ui() -> gr.Blocks:
                     fn=check_pro_status,
                     inputs=[app_user_id_state],
                     outputs=[pro_group, locked_group],
+                    api_visibility="private",
                 )
                 run_concurrent_btn.click(
                     fn=handle_concurrent_triage,
                     inputs=[app_user_id_state],
                     outputs=[concurrent_output],
+                    api_visibility="private",
                 )
 
         gr.Markdown(
@@ -567,8 +584,15 @@ def build_ui() -> gr.Blocks:
             "**Local GPU inference** on T4/A10. Set `HF_TOKEN` for gated models. Set `MODEL_ID` to override LLM."
         )
 
-        demo.load(fn=new_app_user_id, outputs=[app_user_id_state]).then(
-            fn=render_purchase_widget, inputs=[app_user_id_state], outputs=[purchase_widget]
+        demo.load(
+            fn=new_app_user_id,
+            outputs=[app_user_id_state],
+            api_visibility="private",
+        ).then(
+            fn=render_purchase_widget,
+            inputs=[app_user_id_state],
+            outputs=[purchase_widget],
+            api_visibility="private",
         )
 
     return demo
@@ -580,4 +604,9 @@ def build_ui() -> gr.Blocks:
 
 if __name__ == "__main__":
     ui = build_ui()
-    ui.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))
+    ui.launch(
+        server_name="0.0.0.0",
+        server_port=int(os.environ.get("PORT", 7860)),
+        mcp_server=True,
+        theme=gr.themes.Base(primary_hue="green", neutral_hue="slate"),
+    )

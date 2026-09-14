@@ -7,11 +7,13 @@ Fully embedded — no external database or server needed.
 
 from __future__ import annotations
 
+import spaces
 import json
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import chromadb
+import torch
 from sentence_transformers import SentenceTransformer
 
 from schemas import RAGResult
@@ -31,21 +33,31 @@ class RAGEngine:
         self.embedder = SentenceTransformer(
             EMBEDDING_MODEL,
             trust_remote_code=True,
-            model_kwargs={"torch_dtype": "bfloat16"}  # Memory optimization
+            model_kwargs={"dtype": torch.bfloat16},
+            device="cuda",
         )
-        self.client = chromadb.PersistentClient(path=CHROMA_DIR)
-        self.collection = self.client.get_or_create_collection(
-            name=COLLECTION_NAME,
-            metadata={"hnsw:space": "cosine"},
-        )
+        self.client = None
+        self.collection = None
         self._indexed = False
+
+    def _get_collection(self):
+        """Open Chroma lazily inside the ZeroGPU worker process."""
+        if self.collection is None:
+            self.client = chromadb.PersistentClient(path=CHROMA_DIR)
+            self.collection = self.client.get_or_create_collection(
+                name=COLLECTION_NAME,
+                metadata={"hnsw:space": "cosine"},
+            )
+        return self.collection
 
     def index_incidents(self, force: bool = False) -> int:
         """Index all incident JSON files into ChromaDB. Returns count."""
 
-        if not force and self.collection.count() > 0:
+        collection = self._get_collection()
+
+        if not force and collection.count() > 0:
             self._indexed = True
-            return self.collection.count()
+            return collection.count()
 
         incidents = self._load_incidents()
         if not incidents:
@@ -65,7 +77,9 @@ class RAGEngine:
             ids.append(str(inc["id"]))
             documents.append(doc_text)
             # Encode with configured dimension (Matryoshka embeddings)
-            embedding = self.embedder.encode(doc_text, convert_to_tensor=False)
+            embedding = self.embedder.encode_document(
+                doc_text, convert_to_tensor=False
+            )
             # For llama-nemotron-embed-1b-v2, embeddings are already at target dim
             embeddings.append(embedding.tolist())
             metadatas.append({
@@ -77,7 +91,7 @@ class RAGEngine:
                 "tags": ",".join(inc.get("tags", [])),
             })
 
-        self.collection.upsert(
+        collection.upsert(
             ids=ids,
             embeddings=embeddings,
             documents=documents,
@@ -93,8 +107,8 @@ class RAGEngine:
             self.index_incidents()
 
         # Encode query with same dimension
-        vector = self.embedder.encode(query, convert_to_tensor=False).tolist()
-        results = self.collection.query(
+        vector = self.embedder.encode_query(query, convert_to_tensor=False).tolist()
+        results = self._get_collection().query(
             query_embeddings=[vector],
             n_results=top_k,
             include=["documents", "metadatas", "distances"],
@@ -134,7 +148,8 @@ class RAGEngine:
         return "\n".join(lines)
 
     def count(self) -> int:
-        return self.collection.count()
+        """Return the bundled corpus size without running GPU inference."""
+        return len(list(DATA_DIR.glob("*.json")))
 
     def _load_incidents(self) -> List[Dict]:
         incidents = []
@@ -156,5 +171,4 @@ def get_rag_engine() -> RAGEngine:
     global _engine
     if _engine is None:
         _engine = RAGEngine()
-        _engine.index_incidents()
     return _engine

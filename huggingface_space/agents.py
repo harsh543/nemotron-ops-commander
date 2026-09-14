@@ -45,6 +45,10 @@ def _repair_json_candidate(candidate: str) -> str:
         candidate = candidate.rsplit("}", 1)[0] + "}"
     while candidate.count("]") > candidate.count("["):
         candidate = candidate.rsplit("]", 1)[0] + "]"
+    while candidate.count("[") > candidate.count("]"):
+        candidate += "]"
+    while candidate.count("{") > candidate.count("}"):
+        candidate += "}"
     return candidate
 
 
@@ -70,6 +74,13 @@ def _extract_json(text: str) -> Dict[str, Any]:
     # Try direct parse first
     try:
         return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Repair a truncated top-level object before trying narrower patterns.
+    candidate = _repair_json_candidate(text.strip())
+    try:
+        return json.loads(candidate)
     except json.JSONDecodeError:
         pass
 
