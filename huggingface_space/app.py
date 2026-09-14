@@ -265,15 +265,44 @@ _RC_ID_JS_EXPR = """
 """
 
 
+def _present_paywall_js() -> str:
+    """Renders the actual Paywall configured in the RevenueCat dashboard
+    (presentPaywall, full-screen overlay -- htmlTarget omitted) so the
+    customer sees the real product/offering design, using the public
+    key client-side as intended.
+
+    Whatever happens inside it is deliberately ignored here: the
+    package is attached to a Test Store product, and Test Store's
+    checkout is *always* a "Test valid purchase / Test failed purchase
+    / Cancel" simulator screen -- that's a property of the Test Store
+    backend itself, not something reachable from purchase() or
+    presentPaywall(), confirmed against the SDK's own type definitions
+    (no parameter suppresses it). Entitlement granting happens
+    server-side in the chained handle_buy_pro call below via
+    RevenueCat's REST API, so the demo result doesn't depend on which
+    button gets clicked inside that simulator."""
+    public_key = os.environ.get("REVENUECAT_PUBLIC_API_KEY", "")
+    return f"""
+    async () => {{
+      const appUserId = {_RC_ID_JS_EXPR};
+      const RC = (typeof Purchases !== 'undefined' && Purchases.Purchases) ? Purchases.Purchases : undefined;
+      if (RC) {{
+        try {{
+          const purchases = RC.configure({{apiKey: {json.dumps(public_key)}, appUserId: appUserId}});
+          await purchases.presentPaywall({{}});
+        }} catch (err) {{ /* ignored -- see handle_buy_pro's docstring */ }}
+      }}
+    }}
+    """
+
+
 def handle_buy_pro(request: gr.Request) -> str:
-    """Grants the pro entitlement server-side via RevenueCat's REST API
-    (see revenuecat_client.grant_pro) instead of driving a client-side
-    purchase -- RevenueCat's Test Store checkout only ever offers a
-    "Test valid purchase / Test failed purchase" simulator, which is a
-    property of the Test Store backend itself, not something reachable
-    from either purchase() or presentPaywall(). Granting directly is
-    still real RevenueCat entitlement management against the same
-    dashboard entitlement that check_pro_status reads."""
+    """Chained (via .then()) after the presentPaywall() display above.
+    Grants the pro entitlement server-side via RevenueCat's REST API
+    (see revenuecat_client.grant_pro), independent of the Test Store
+    simulator's outcome -- still real RevenueCat entitlement management
+    against the same dashboard entitlement that check_pro_status
+    reads."""
     from revenuecat_client import grant_pro
 
     app_user_id = request.cookies.get("rc_app_user_id", "")
@@ -340,11 +369,8 @@ def handle_concurrent_triage(request: gr.Request) -> str:
 # <script> elements inserted via innerHTML, which is how gr.HTML renders
 # its content -- confirmed empirically: the tag was present in the DOM
 # but window.Purchases was never defined and clicks did nothing).
-#
-# No RevenueCat JS SDK script tag anymore -- handle_buy_pro grants the
-# entitlement server-side, so the browser only needs the cookie-seeding
-# snippet, not the purchase SDK.
 REVENUECAT_HEAD = (
+    '<script src="https://cdn.jsdelivr.net/npm/@revenuecat/purchases-js@1.60.1/dist/Purchases.umd.js"></script>'
     # Runs immediately (not on DOMContentLoaded -- that event has
     # already fired by the time a launch(head=...) script executes on
     # this Gradio version, confirmed empirically) so rc_app_user_id's
@@ -599,6 +625,9 @@ def build_ui() -> gr.Blocks:
                     buy_pro_btn = gr.Button("✨ Upgrade to Pro", variant="primary", size="lg")
                     purchase_status = gr.Markdown()
                     buy_pro_btn.click(
+                        fn=None,
+                        js=_present_paywall_js(),
+                    ).then(
                         fn=handle_buy_pro,
                         outputs=[purchase_status],
                     )
