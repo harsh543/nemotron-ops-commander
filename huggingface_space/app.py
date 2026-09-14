@@ -13,7 +13,6 @@ import spaces
 import json
 import os
 import time
-import uuid
 from typing import Tuple
 
 import gradio as gr
@@ -239,49 +238,54 @@ PRO_SAMPLE_INCIDENTS = [
 ]
 
 
-def new_app_user_id() -> str:
-    return str(uuid.uuid4())
+def _app_user_id_load_js() -> str:
+    """Runs client-side only (fn=None) to seed app_user_id_state.
+
+    A Python fn writing to gr.State here does not reliably reach a
+    same-page js= click handler's inputs (verified empirically: the
+    click handler saw appUserId as null even seconds after the
+    server-side load had completed). Generating and persisting the id
+    entirely in JS -- read by the same reactive store the click
+    handler's inputs pull from -- sidesteps that gap, and as a bonus
+    survives page reloads so "Check Pro status" keeps working."""
+    return """
+    () => {
+      let id = localStorage.getItem('rc_app_user_id');
+      if (!id) {
+        id = 'anon-' + crypto.randomUUID();
+        localStorage.setItem('rc_app_user_id', id);
+      }
+      return id;
+    }
+    """
 
 
-def render_purchase_widget(app_user_id: str) -> str:
-    """Rebuilt per-session (via demo.load) so the embedded JS gets this
-    session's own app_user_id baked in directly, rather than trying to
-    thread a Gradio State value into a static HTML string after the fact."""
+def _purchase_click_js() -> str:
+    """A real Gradio event-listener JS string (compiled and executed by
+    Gradio's own runtime), not markup handed to gr.HTML(). Takes the
+    session's app_user_id as its one input, returns the status line as
+    its one output -- both wired through .click(inputs=..., outputs=...)
+    below, not baked into a rendered string."""
     public_key = os.environ.get("REVENUECAT_PUBLIC_API_KEY", "")
     package_id = os.environ.get("REVENUECAT_PACKAGE_ID", "pro_monthly")
-    if not public_key:
-        return "<i>REVENUECAT_PUBLIC_API_KEY not configured on this Space yet.</i>"
     return f"""
-    <div>
-      <button id="rc-buy-btn" style="padding:8px 16px;font-weight:600;">Buy Pro (Test Store)</button>
-      <span id="rc-status" style="margin-left:10px;"></span>
-    </div>
-    <script src="https://cdn.jsdelivr.net/npm/@revenuecat/purchases-js@1.60.1/dist/Purchases.umd.js"></script>
-    <script>
-    (function() {{
-      const appUserId = {json.dumps(app_user_id)};
-      const publicKey = {json.dumps(public_key)};
-      const packageId = {json.dumps(package_id)};
-      const statusEl = document.getElementById('rc-status');
-
-      document.getElementById('rc-buy-btn').addEventListener('click', async () => {{
-        statusEl.textContent = 'Loading offerings...';
-        try {{
-          const purchases = Purchases.configure({{apiKey: publicKey, appUserId: appUserId}});
-          const offerings = await purchases.getOfferings();
-          const pkg = (offerings.current && offerings.current.availablePackages.find(p => p.identifier === packageId))
-            || (offerings.current && offerings.current.availablePackages[0]);
-          if (!pkg) {{ statusEl.textContent = 'No package configured in RevenueCat yet.'; return; }}
-          statusEl.textContent = 'Opening Test Store checkout...';
-          const result = await purchases.purchase({{rcPackage: pkg}});
-          const active = Object.keys(result.customerInfo.entitlements.active);
-          statusEl.textContent = active.length ? 'Purchased! Click "Check Pro status" below.' : 'Purchase did not activate an entitlement.';
-        }} catch (err) {{
-          statusEl.textContent = 'Error: ' + (err && err.message ? err.message : err);
-        }}
-      }});
-    }})();
-    </script>
+    async (appUserId) => {{
+      if (typeof Purchases === 'undefined') {{
+        return 'RevenueCat SDK failed to load -- check network/ad-blockers and retry.';
+      }}
+      try {{
+        const purchases = Purchases.configure({{apiKey: {json.dumps(public_key)}, appUserId: appUserId}});
+        const offerings = await purchases.getOfferings();
+        const pkg = (offerings.current && offerings.current.availablePackages.find(p => p.identifier === {json.dumps(package_id)}))
+          || (offerings.current && offerings.current.availablePackages[0]);
+        if (!pkg) return 'No package configured in RevenueCat yet.';
+        const result = await purchases.purchase({{rcPackage: pkg}});
+        const active = Object.keys(result.customerInfo.entitlements.active);
+        return active.length ? 'Purchased! Click "Check Pro status" below.' : 'Purchase did not activate an entitlement.';
+      }} catch (err) {{
+        return 'Error: ' + (err && err.message ? err.message : String(err));
+      }}
+    }}
     """
 
 
@@ -317,6 +321,19 @@ def handle_concurrent_triage(app_user_id: str) -> str:
     for (title, *_rest), result in zip(PRO_SAMPLE_INCIDENTS, results):
         lines.append(f"- **{title}** — {result.priority}, {result.latency_ms:.0f}ms — {result.impact}")
     return "\n".join(lines)
+
+
+# RevenueCat Web Billing SDK -- must be passed to launch(head=...), not
+# Blocks(head=...) (not a supported Blocks kwarg in this Gradio version)
+# and not rendered inside a gr.HTML() component (browsers never execute
+# <script> elements inserted via innerHTML, which is how gr.HTML renders
+# its content -- confirmed empirically: the tag was present in the DOM
+# but window.Purchases was never defined and clicks did nothing).
+REVENUECAT_HEAD = (
+    '<script src="https://cdn.jsdelivr.net/npm/@revenuecat/purchases-js@1.60.1/dist/Purchases.umd.js"></script>'
+    if os.environ.get("REVENUECAT_PUBLIC_API_KEY")
+    else None
+)
 
 
 # ---------------------------------------------------------------------------
@@ -559,7 +576,17 @@ def build_ui() -> gr.Blocks:
                     "This is a RevenueCat **Test Store** purchase: no real money moves."
                 )
 
-                purchase_widget = gr.HTML()
+                if os.environ.get("REVENUECAT_PUBLIC_API_KEY"):
+                    buy_pro_btn = gr.Button("Buy Pro (Test Store)")
+                    purchase_status = gr.Markdown()
+                    buy_pro_btn.click(
+                        fn=None,
+                        inputs=[app_user_id_state],
+                        outputs=[purchase_status],
+                        js=_purchase_click_js(),
+                    )
+                else:
+                    gr.Markdown("_REVENUECAT_PUBLIC_API_KEY not configured on this Space yet._")
 
                 check_pro_btn = gr.Button("Check Pro status / Unlock")
 
@@ -594,13 +621,9 @@ def build_ui() -> gr.Blocks:
         )
 
         demo.load(
-            fn=new_app_user_id,
+            fn=None,
             outputs=[app_user_id_state],
-            api_visibility="private",
-        ).then(
-            fn=render_purchase_widget,
-            inputs=[app_user_id_state],
-            outputs=[purchase_widget],
+            js=_app_user_id_load_js(),
             api_visibility="private",
         )
 
@@ -618,4 +641,5 @@ if __name__ == "__main__":
         server_port=int(os.environ.get("PORT", 7860)),
         mcp_server=True,
         theme=gr.themes.Base(primary_hue="green", neutral_hue="slate"),
+        head=REVENUECAT_HEAD,
     )
